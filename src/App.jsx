@@ -196,7 +196,12 @@ const App = () => {
   const currentAllowed = useMemo(() => Array.from(new Set([...DEFAULT_EMAIL_IZIN.map(e=>e.toLowerCase()), ...(accessData?.allowed || []).map(e=>e.toLowerCase())])), [accessData?.allowed]);
   const currentAdmins = useMemo(() => Array.from(new Set([...DEFAULT_ADMIN.map(e=>e.toLowerCase()), ...(accessData?.admins || []).map(e=>e.toLowerCase())])), [accessData?.admins]);
   const isAdmin = currentAdmins.includes(activeEmail?.toLowerCase() || '');
-"Aplikasi Dokumentasi"
+
+   // --- PENGATURAN NAMA TAB BROWSER ---
+  useEffect(() => {
+    // SILAKAN GANTI TULISAN DI DALAM TANDA KUTIP INI SESUAI KEINGINAN ANDA
+    document.title = "Aplikasi Dokumentasi"; 
+  }, []);
   // =========================================================================
   // PELINDUNG TAB BROWSER SAAT PROSES PENYIMPANAN BERAT BERJALAN
   // =========================================================================
