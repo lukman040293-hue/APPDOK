@@ -1,22 +1,26 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Camera, Trash2, Image as ImageIcon, Upload, FileDown, Presentation, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle, ShieldAlert, LifeBuoy, Sun, Droplets, Target, ClipboardList, Cloud, FolderOpen, Plus, ArrowLeft, Calendar, Briefcase, FileText, Loader2, WifiOff, HardDrive, UploadCloud, Lock, User, LogOut, ZoomIn, ZoomOut, Maximize, Smartphone, Palette } from 'lucide-react';
-
-// --- FIREBASE IMPORTS ---
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+// ... existing code ...
 import { getFirestore, doc, setDoc, getDoc, collection, getDocs, deleteDoc, onSnapshot, writeBatch } from 'firebase/firestore';
 
 // --- INISIALISASI FIREBASE ---
+// 👇👇👇 GANTI TULISAN DI DALAM TANDA KUTIP DENGAN KUNCI FIREBASE ANDA 👇👇👇
+apiKey: "AIzaSyCvMuSGrojku0-UM4tWaNTK2EDlgqjWAlM",
+  authDomain: "apdok-f9052.firebaseapp.com",
+  projectId: "apdok-f9052",
+  storageBucket: "apdok-f9052.firebasestorage.app",
+  messagingSenderId: "839994843119",
+  appId: "1:839994843119:web:2590957adb4e6f1ce7a01a",
+  measurementId: "G-MQX0Q3ZPC0"
+};
+// 👆👆👆 ============================================================== 👆👆👆
+
 let app, auth, db, appId;
 try {
-  const configStr = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
-  const firebaseConfig = configStr ? JSON.parse(configStr) : {};
   app = initializeApp(firebaseConfig);
   auth = getAuth(app);
   db = getFirestore(app);
-  appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+  appId = firebaseConfig.projectId || 'default-app-id';
 } catch (e) {
-  console.error("Gagal inisialisasi Cloud Storage", e);
+  console.error("Gagal inisialisasi Firebase", e);
 }
 
 // --- AKSES DEFAULT (KODE BAWAAN) ---
