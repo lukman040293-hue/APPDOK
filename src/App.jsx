@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Camera, Trash2, Image as ImageIcon, Upload, FileDown, Presentation, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle, ShieldAlert, LifeBuoy, Sun, Droplets, Target, ClipboardList, Cloud, FolderOpen, Plus, ArrowLeft, Calendar, Briefcase, FileText, Loader2, WifiOff, HardDrive, UploadCloud, Lock, User, LogOut, ZoomIn, ZoomOut, Maximize, Smartphone, Palette } from 'lucide-react';
+import { Camera, Trash2, Image as ImageIcon, Upload, FileDown, Presentation, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle, ShieldAlert, LifeBuoy, Sun, Droplets, Target, ClipboardList, Cloud, FolderOpen, Plus, ArrowLeft, Calendar, Briefcase, FileText, Loader2, WifiOff, HardDrive, UploadCloud, Lock, User, LogOut, ZoomIn, ZoomOut, Maximize, Smartphone, Palette, Sparkles, Wand2 } from 'lucide-react';
 
 // --- FIREBASE IMPORTS ---
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc, collection, getDocs, deleteDoc, onSnapshot, writeBatch } from 'firebase/firestore';
 
 // --- INISIALISASI FIREBASE ---
@@ -27,16 +27,97 @@ try {
   console.error("Gagal inisialisasi Firebase", e);
 }
 
+// --- GEMINI API SETUP ---
+const geminiApiKey = ""; // Environment provides the key at runtime
+
+const fetchGeminiContent = async (prompt, base64Image = null) => {
+  const parts = [{ text: prompt }];
+  
+  if (base64Image) {
+    const mimeType = base64Image.match(/data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+).*,.*/)?.[1] || "image/jpeg";
+    const base64Data = base64Image.split(',')[1];
+    parts.push({ inlineData: { mimeType, data: base64Data } });
+  }
+
+  const payload = {
+    contents: [{ role: "user", parts }],
+    systemInstruction: { 
+      parts: [{ text: "Anda adalah asisten AI ahli untuk insinyur sipil dan pengawas proyek. Jawab dalam bahasa Indonesia yang formal, ringkas, dan teknis." }] 
+    }
+  };
+
+  const maxRetries = 5;
+  const delays = [1000, 2000, 4000, 8000, 16000];
+
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${geminiApiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      const result = await response.json();
+      return result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    } catch (error) {
+      if (i === maxRetries - 1) throw error;
+      await new Promise(res => setTimeout(res, delays[i])); // Exponential backoff
+    }
+  }
+};
+
+
 // --- AKSES DEFAULT (KODE BAWAAN) ---
 const DEFAULT_EMAIL_IZIN = ['at.file2020@gmail.com', 'admin@gmail.com'];
 const DEFAULT_ADMIN = ['admin@gmail.com', 'at.file2020@gmail.com'];
 
-const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleFileUpload }) => {
+const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleFileUpload, showToast, fetchGeminiContent }) => {
   const [tab, setTab] = useState('filter');
+  const [isAILoading, setIsAILoading] = useState(false);
   const { zoom = 100, panX = 50, panY = 50, brightness = 100, saturation = 100, progress = 0 } = p;
 
+  const handleAutoCaption = async () => {
+    if (!p.src) return;
+    setIsAILoading(true);
+    showToast("AI sedang menganalisis foto...", "info");
+    try {
+      const prompt = reportType === 'progres'
+        ? "Analisis foto konstruksi ini. Buatkan 1-2 kalimat teknis singkat yang menjelaskan progres fisik yang terlihat di lapangan."
+        : "Analisis foto lapangan ini. Buatkan 1-2 kalimat observasi singkat dan profesional yang mendeskripsikan kondisi utama yang terlihat.";
+      const result = await fetchGeminiContent(prompt, p.src);
+      if (result) {
+        updatePhoto('note', result.trim());
+        showToast("Deskripsi berhasil dibuat!", "success");
+      }
+    } catch (e) {
+      showToast("Gagal memanggil AI", "error");
+    }
+    setIsAILoading(false);
+  };
+
+  const handlePolishText = async () => {
+    if (!p.note) {
+      showToast("Isi catatan terlebih dahulu!", "error");
+      return;
+    }
+    setIsAILoading(true);
+    showToast("AI sedang menyempurnakan teks...", "info");
+    try {
+      const prompt = `Perbaiki dan ubah catatan lapangan acak berikut menjadi kalimat laporan proyek yang profesional, baku, dan jelas dalam bahasa Indonesia. Hanya berikan hasil akhir perbaikannya saja tanpa tambahan teks lain:\n\n"${p.note}"`;
+      const result = await fetchGeminiContent(prompt);
+      if (result) {
+        updatePhoto('note', result.trim());
+        showToast("Teks dirapikan!", "success");
+      }
+    } catch (e) {
+      showToast("Gagal memanggil AI", "error");
+    }
+    setIsAILoading(false);
+  };
+
   return (
-    <div className="bg-white rounded-[32px] sm:rounded-[48px] shadow-xl overflow-hidden flex flex-col group border-2 border-transparent hover:border-blue-500 transition-all duration-500 hover:shadow-2xl">
+    <div className="bg-white rounded-[32px] sm:rounded-[48px] shadow-xl overflow-hidden flex flex-col group border-2 border-transparent hover:border-blue-500 transition-all duration-500 hover:shadow-2xl relative">
       <div className="h-52 sm:h-60 bg-slate-50 flex items-center justify-center relative border-b border-slate-100 overflow-hidden">
         {p?.src ? (
           <>
@@ -133,12 +214,34 @@ const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleF
             </div>
           </>
         )}
-        <textarea 
-          value={p?.note || ''} 
-          onChange={e => updatePhoto('note', e.target.value)} 
-          placeholder={reportType === 'progres' ? "Detail progres..." : "Keterangan foto..."} 
-          className="w-full p-4 sm:p-5 bg-slate-50 rounded-2xl sm:rounded-[28px] text-xs sm:text-sm h-24 sm:h-28 resize-none border-2 border-transparent focus:bg-white focus:border-blue-100 transition-all leading-relaxed outline-none shadow-inner" 
-        />
+        <div className="flex flex-col gap-2">
+          <textarea 
+            value={p?.note || ''} 
+            onChange={e => updatePhoto('note', e.target.value)} 
+            placeholder={reportType === 'progres' ? "Detail progres..." : "Keterangan foto..."} 
+            className="w-full p-4 sm:p-5 bg-slate-50 rounded-2xl sm:rounded-[28px] text-xs sm:text-sm h-24 sm:h-28 resize-none border-2 border-transparent focus:bg-white focus:border-blue-100 transition-all leading-relaxed outline-none shadow-inner" 
+          />
+          {p?.src && (
+            <div className="flex flex-wrap gap-2 w-full">
+              <button 
+                onClick={handleAutoCaption} 
+                disabled={isAILoading} 
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 bg-purple-50 text-purple-700 hover:bg-purple-100 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black uppercase transition-all shadow-sm disabled:opacity-50"
+              >
+                {isAILoading ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>}
+                ✨ AI Analisis Foto
+              </button>
+              <button 
+                onClick={handlePolishText} 
+                disabled={isAILoading || !p?.note} 
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black uppercase transition-all shadow-sm disabled:opacity-50"
+              >
+                {isAILoading ? <Loader2 size={12} className="animate-spin"/> : <Wand2 size={12}/>}
+                ✨ Perbaiki Teks
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -146,13 +249,28 @@ const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleF
 
 const App = () => {
   const createNewPage = () => Array(6).fill(null).map(() => ({ id: Date.now() + Math.random(), src: null, note: '', brightness: 100, saturation: 100, progress: 0, zoom: 100, panX: 50, panY: 50 }));
-  const defaultReportInfo = { title: 'LAPORAN DOKUMENTASI LAPANGAN', project: '', department: '', contractor: '', consultant: '', date: new Date().getFullYear().toString(), logos: [null, null, null], template: 'klasik' };
+  const defaultReportInfo = { 
+    title: 'LAPORAN DOKUMENTASI LAPANGAN', 
+    project: '', 
+    department: '', 
+    contractor: '', 
+    consultant: '', 
+    date: new Date().getFullYear().toString(), 
+    logos: [null, null, null], 
+    template: 'klasik',
+    customMeta: [
+      { id: 'm1', label: 'Pekerjaan', value: '' },
+      { id: 'm2', label: 'Instansi', value: '' },
+      { id: 'm3', label: 'Kontraktor', value: '' },
+      { id: 'm4', label: 'Konsultan', value: '' }
+    ]
+  };
 
   // --- STATE UTAMA ---
   const [activeEmail, setActiveEmail] = useState(null); 
   const [emailInput, setEmailInput] = useState('');
   const [loginError, setLoginError] = useState('');
-  const [debugError, setDebugError] = useState(''); // Fitur Deteksi Error Tambahan
+  const [debugError, setDebugError] = useState(''); 
   const [user, setUser] = useState(null);
   const [isAppReady, setIsAppReady] = useState(false);
   const [saveStatus, setSaveStatus] = useState('saved'); 
@@ -197,11 +315,12 @@ const App = () => {
   const currentAdmins = useMemo(() => Array.from(new Set([...DEFAULT_ADMIN.map(e=>e.toLowerCase()), ...(accessData?.admins || []).map(e=>e.toLowerCase())])), [accessData?.admins]);
   const isAdmin = currentAdmins.includes(activeEmail?.toLowerCase() || '');
 
-   // --- PENGATURAN NAMA TAB BROWSER ---
+  // --- PENGATURAN NAMA TAB BROWSER ---
   useEffect(() => {
     // SILAKAN GANTI TULISAN DI DALAM TANDA KUTIP INI SESUAI KEINGINAN ANDA
     document.title = "Aplikasi Dokumentasi"; 
   }, []);
+
   // =========================================================================
   // PELINDUNG TAB BROWSER SAAT PROSES PENYIMPANAN BERAT BERJALAN
   // =========================================================================
@@ -219,11 +338,11 @@ const App = () => {
   useEffect(() => {
     const initAuth = async () => {
       try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) { await signInWithCustomToken(auth, __initial_auth_token); } 
-        else { await signInAnonymously(auth); }
+        // Langsung menggunakan sistem autentikasi anonim mandiri milik Firebase Anda
+        await signInAnonymously(auth);
+        setDebugError(''); // Bersihkan peringatan error (jika sebelumnya ada)
       } catch (err) {
-        setDebugError(err.message); // Tangkap error asli dari server
-        await signInAnonymously(auth).catch(e => setDebugError(e.message));
+        setDebugError(err.message); 
       }
     };
     if (auth) initAuth();
@@ -482,7 +601,20 @@ const App = () => {
       setProjectTime(pTime);
       isInitialLoad.current = true;
 
-      setReportInfo(sessionData?.reportInfo || freshProjectData.reportInfo || defaultReportInfo);
+      let loadedInfo = sessionData?.reportInfo || freshProjectData.reportInfo || defaultReportInfo;
+      // Memastikan laporan lama yang belum punya kolom kustom (customMeta) tetap bisa dibuka
+      if (!loadedInfo.customMeta) {
+          loadedInfo = {
+             ...loadedInfo,
+             customMeta: [
+                 { id: 'm1', label: 'Pekerjaan', value: loadedInfo.project || '' },
+                 { id: 'm2', label: 'Instansi', value: loadedInfo.department || '' },
+                 { id: 'm3', label: 'Kontraktor', value: loadedInfo.contractor || '' },
+                 { id: 'm4', label: 'Konsultan', value: loadedInfo.consultant || '' }
+             ]
+          };
+      }
+      setReportInfo(loadedInfo);
       const freshType = sessionData?.reportType || freshProjectData.lastActiveTab || freshProjectData.reportType || 'umum';
       setReportType(freshType);
       setView(sessionData?.view || 'edit');
@@ -649,7 +781,19 @@ const App = () => {
         const now = Date.now();
         setActiveProjectId(newId);
         
-        const loadedInfo = data.reportInfo || defaultReportInfo;
+        let loadedInfo = data.reportInfo || defaultReportInfo;
+        // Memastikan file mentahan lama tetap cocok dengan sistem baru
+        if (!loadedInfo.customMeta) {
+           loadedInfo = {
+             ...loadedInfo,
+             customMeta: [
+                 { id: 'm1', label: 'Pekerjaan', value: loadedInfo.project || '' },
+                 { id: 'm2', label: 'Instansi', value: loadedInfo.department || '' },
+                 { id: 'm3', label: 'Kontraktor', value: loadedInfo.contractor || '' },
+                 { id: 'm4', label: 'Konsultan', value: loadedInfo.consultant || '' }
+             ]
+           };
+        }
         const loadedType = data.reportType || 'umum';
         let loadedPages = data.pagesData;
         if (!loadedPages) {
@@ -723,17 +867,26 @@ const App = () => {
   };
 
   // =========================================================================
-  // PENJAGA KUALITAS FOTO TINGGI (HIGH-QUALITY JPEG)
+  // PENJAGA KUALITAS FOTO & PENCEGAH ERROR LIMIT 1MB FIRESTORE
   // =========================================================================
   const processInitialUpload = (dataUrl) => {
     return new Promise((r) => {
       const img = new Image(); img.src = dataUrl;
       img.onload = () => {
-        const canvas = document.createElement('canvas'); const max = 800;
+        const canvas = document.createElement('canvas'); 
+        // Firestore membatasi ukuran 1 dokumen maksimal 1MB.
+        // 1 Halaman berisi 6 foto. Kita kompres ke max 640px dengan kualitas 0.65 
+        // agar 6 foto aman masuk ke dalam 1 dokumen tanpa mengurangi ketajaman di PDF.
+        const max = 640;
         let w = img.width, h = img.height;
-        if (w > max || h > max) { if (w > h) { h = Math.round((max / w) * h); w = max; } else { w = Math.round((max / h) * w); h = max; } }
-        canvas.width = w; canvas.height = h; const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, w, h);
-        r(canvas.toDataURL('image/jpeg', 0.8)); // Kualitas Tinggi 80%
+        if (w > max || h > max) { 
+          if (w > h) { h = Math.round((max / w) * h); w = max; } 
+          else { w = Math.round((max / h) * w); h = max; } 
+        }
+        canvas.width = w; canvas.height = h; 
+        const ctx = canvas.getContext('2d'); 
+        ctx.drawImage(img, 0, 0, w, h);
+        r(canvas.toDataURL('image/jpeg', 0.65)); // Kualitas 65% untuk menghemat ukuran
       };
       img.onerror = () => r(null);
     });
@@ -743,7 +896,7 @@ const App = () => {
     return new Promise((r) => {
       const img = new Image(); img.src = dataUrl;
       img.onload = () => {
-        const canvas = document.createElement('canvas'); const max = 400;
+        const canvas = document.createElement('canvas'); const max = 300;
         let w = img.width, h = img.height;
         if (w > max || h > max) { if (w > h) { h = Math.round((max / w) * h); w = max; } else { w = Math.round((max / h) * w); h = max; } }
         canvas.width = w; canvas.height = h; const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, w, h);
@@ -938,15 +1091,31 @@ const App = () => {
         const slide = pptx.addSlide({ masterName });
         let curY = PAGE_MARGIN_TOP;
         if (reportInfo.logos?.some(l => l !== null)) {
-          const lw = 2.36, lh = 0.5;
-          if (reportInfo.logos[0]) slide.addImage({ data: reportInfo.logos[0], x: PAGE_MARGIN_SIDE, y: curY, w: lw, h: lh, sizing: { type: 'contain' } });
-          if (reportInfo.logos[1]) slide.addImage({ data: reportInfo.logos[1], x: 8.27/2-lw/2, y: curY, w: lw, h: lh, sizing: { type: 'contain' } });
-          if (reportInfo.logos[2]) slide.addImage({ data: reportInfo.logos[2], x: 8.27-PAGE_MARGIN_SIDE-lw, y: curY, w: lw, h: lh, sizing: { type: 'contain' } });
+          const lh = 0.55;
+          let currentX = PAGE_MARGIN_SIDE;
+          for (let i = 0; i < 3; i++) {
+            if (reportInfo.logos[i]) {
+              // Tempatkan logo berjejer rata kiri
+              slide.addImage({ data: reportInfo.logos[i], x: currentX, y: curY, w: 1.8, h: lh, sizing: { type: 'contain' } });
+              currentX += 1.9; // Geser sumbu X untuk logo berikutnya
+            }
+          }
         }
         curY += 0.65;
         slide.addText(reportInfo.title.toUpperCase(), { x: PAGE_MARGIN_SIDE, y: curY, w: CONTENT_W, fontSize: 16, bold: true, align: 'center', color: '0F172A' });
         curY += 0.45;
-        const meta = [{ l: "PEKERJAAN", v: reportInfo.project }, { l: "INSTANSI", v: reportInfo.department }, { l: "KONTRAKTOR", v: reportInfo.contractor || reportInfo.company }, { l: "KONSULTAN", v: reportInfo.consultant }, { l: "TAHUN", v: reportInfo.date }];
+        
+        const cMeta = reportInfo.customMeta || [
+            { id: 'm1', label: 'Pekerjaan', value: reportInfo.project || '' },
+            { id: 'm2', label: 'Instansi', value: reportInfo.department || '' },
+            { id: 'm3', label: 'Kontraktor', value: reportInfo.contractor || '' },
+            { id: 'm4', label: 'Konsultan', value: reportInfo.consultant || '' }
+        ];
+        const meta = [
+            ...cMeta.map(m => ({ l: (m.label || '').toUpperCase(), v: m.value })),
+            { l: "TAHUN", v: reportInfo.date }
+        ];
+
         meta.forEach(m => {
           slide.addText(m.l, { x: PAGE_MARGIN_SIDE, y: curY, w: 1.0, fontSize: 7, bold: true, color: '94A3B8' });
           slide.addText(":", { x: PAGE_MARGIN_SIDE + 1.0, y: curY, w: 0.1, fontSize: 7, bold: true, color: '475569' });
@@ -991,7 +1160,16 @@ const App = () => {
   const activePageData = useMemo(() => pages[currentPage - 1] || [], [pages, currentPage]);
 
   const ReportPage = ({ data, isFinal = false }) => {
-    const meta = [{ l: "Pekerjaan", v: reportInfo.project }, { l: "Instansi", v: reportInfo.department }, { l: "Kontraktor", v: reportInfo.contractor || reportInfo.company }, { l: "Konsultan", v: reportInfo.consultant }, { l: "Tahun", v: reportInfo.date }];
+    const cMeta = reportInfo.customMeta || [
+        { id: 'm1', label: 'Pekerjaan', value: reportInfo.project || '' },
+        { id: 'm2', label: 'Instansi', value: reportInfo.department || '' },
+        { id: 'm3', label: 'Kontraktor', value: reportInfo.contractor || '' },
+        { id: 'm4', label: 'Konsultan', value: reportInfo.consultant || '' }
+    ];
+    const meta = [
+        ...cMeta.map(m => ({ l: m.label, v: m.value })),
+        { l: "Tahun", v: reportInfo.date }
+    ];
     
     // --- TEMPLATE STYLING LOGIC ---
     const template = reportInfo.template || 'klasik';
@@ -1022,10 +1200,10 @@ const App = () => {
     return (
       <div className={`bg-white w-[210mm] flex flex-col ${baseFontClass} relative box-border ${isFinal ? 'report-page-final' : 'mb-10 shadow-2xl rounded-2xl border border-slate-200 shrink-0'}`} style={{ height: '296.7mm', padding: '6mm 15mm 15mm 15mm', margin: '0 auto', pageBreakAfter: 'always' }}>
         <div className={`text-center pb-4 mb-5 flex-none ${headerBorderClass}`}>
-          <div className="flex justify-between items-start mb-3 h-12">
-            <div className="flex-1 flex justify-start h-full">{reportInfo.logos?.[0] && <img src={reportInfo.logos[0]} className="h-full w-auto max-w-full object-contain" alt="" />}</div>
-            <div className="flex-1 flex justify-center h-full">{reportInfo.logos?.[1] && <img src={reportInfo.logos[1]} className="h-full w-auto max-w-full object-contain" alt="" />}</div>
-            <div className="flex-1 flex justify-end h-full">{reportInfo.logos?.[2] && <img src={reportInfo.logos[2]} className="h-full w-auto max-w-full object-contain" alt="" />}</div>
+          <div className="flex justify-start items-center gap-6 mb-3 h-12">
+            {reportInfo.logos?.[0] && <img src={reportInfo.logos[0]} className="h-full w-auto object-contain object-left" alt="" />}
+            {reportInfo.logos?.[1] && <img src={reportInfo.logos[1]} className="h-full w-auto object-contain object-left" alt="" />}
+            {reportInfo.logos?.[2] && <img src={reportInfo.logos[2]} className="h-full w-auto object-contain object-left" alt="" />}
           </div>
           <h2 className={`text-xl uppercase mb-4 leading-tight ${headerTitleClass}`}>{reportInfo.title}</h2>
           <div className="text-left space-y-0.5">
@@ -1157,9 +1335,8 @@ const App = () => {
         </div>
       </header>
 
-      {statusMsg.text && <div className={`fixed top-20 sm:top-24 left-1/2 -translate-x-1/2 z-[100] px-6 py-2.5 sm:px-8 sm:py-3.5 rounded-2xl sm:rounded-3xl shadow-2xl flex items-center gap-3 sm:gap-4 font-black text-[10px] sm:text-xs text-white uppercase tracking-widest animate-in slide-in-from-top-6 ${statusMsg.type === 'error' ? 'bg-red-600' : 'bg-blue-600 border border-white/20'}`}>{statusMsg.type === 'info' && <Loader2 size={16} className="animate-spin" />} {statusMsg.text}</div>}
+      {statusMsg.text && <div className={`fixed top-20 sm:top-24 left-1/2 -translate-x-1/2 z-[100] px-6 py-2.5 sm:px-8 sm:py-3.5 rounded-2xl sm:rounded-3xl shadow-2xl flex items-center gap-3 sm:gap-4 font-black text-[10px] sm:text-xs text-white uppercase tracking-widest animate-in slide-in-from-top-6 ${statusMsg.type === 'error' ? 'bg-red-600' : statusMsg.type === 'success' ? 'bg-emerald-600' : 'bg-blue-600 border border-white/20'}`}>{statusMsg.type === 'info' ? <Loader2 size={16} className="animate-spin" /> : statusMsg.type === 'success' ? <CheckCircle2 size={16} /> : null} {statusMsg.text}</div>}
 
-      {}
       {view === 'dashboard' && (
         <main className="max-w-6xl mx-auto p-4 sm:p-8 animate-in fade-in duration-500">
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end mb-8 sm:mb-10 gap-6">
@@ -1192,7 +1369,7 @@ const App = () => {
                   </div>
                   <h3 className="text-base sm:text-lg font-black text-slate-800 mb-3 sm:mb-4 line-clamp-2">{p.reportInfo?.title || 'Laporan'}</h3>
                   <div className="space-y-1.5 sm:space-y-2 mb-4 sm:mb-6 flex-grow text-[10px] sm:text-xs text-slate-500 font-medium">
-                    <div className="flex items-center gap-2 truncate"><Briefcase size={12} className="sm:w-3.5 sm:h-3.5 text-slate-400" /> {p.reportInfo?.project || '-'}</div>
+                    <div className="flex items-center gap-2 truncate"><Briefcase size={12} className="sm:w-3.5 sm:h-3.5 text-slate-400" /> {p.reportInfo?.customMeta?.[0]?.value || p.reportInfo?.project || '-'}</div>
                     <div className="flex items-center gap-2"><Palette size={12} className="sm:w-3.5 sm:h-3.5 text-slate-400" /> Tema: <span className="capitalize">{p.reportInfo?.template || 'Klasik'}</span></div>
                     {isAdmin && (
                       <>
@@ -1210,7 +1387,6 @@ const App = () => {
         </main>
       )}
 
-      {}
       {view === 'edit' && (
         <main className="max-w-6xl mx-auto p-4 sm:p-8 animate-in fade-in slide-in-from-bottom-8 duration-700">
           <div className="flex bg-white p-1.5 sm:p-2 rounded-[24px] sm:rounded-[32px] mb-6 sm:mb-8 shadow-xl max-w-md mx-auto border border-slate-200">
@@ -1233,7 +1409,7 @@ const App = () => {
                       <label className="cursor-pointer flex flex-col items-center justify-center w-full h-full text-slate-400 hover:bg-slate-100 transition-all">
                         <Upload size={14} className="mb-0.5 sm:mb-1 sm:w-4 sm:h-4" />
                         <span className="text-[7px] sm:text-[8px] font-black uppercase">Logo {idx === 0 ? 'Kiri' : idx === 1 ? 'Tengah' : 'Kanan'}</span>
-                        <input type="file" accept="image/*" className="hidden" onChange={(e) => handleLogoUpload(idx, e)} />
+                        <input type="file" accept="image/jpeg, image/png, image/webp" className="hidden" onChange={(e) => handleLogoUpload(idx, e)} />
                       </label>
                     )}
                   </div>
@@ -1246,25 +1422,61 @@ const App = () => {
                 <label className="text-[9px] sm:text-[10px] font-black text-slate-400 tracking-widest ml-2">Judul Laporan</label>
                 <input type="text" value={reportInfo.title} onChange={e => setReportInfo({...reportInfo, title: e.target.value})} className="w-full p-3.5 sm:p-4 bg-slate-50 border-2 border-transparent rounded-2xl sm:rounded-3xl font-black text-slate-800 focus:border-blue-500 outline-none transition-all shadow-inner text-sm" />
               </div>
+              
+              {/* KOLOM KUSTOM (BISA DIEDIT/DIHAPUS/DITAMBAH) */}
+              {(reportInfo.customMeta || []).map((meta, idx) => (
+                <div key={meta.id} className={`${idx === 0 ? 'md:col-span-2' : ''} group relative`}>
+                  <div className="flex items-center justify-between mb-1 ml-2 pr-2">
+                    <input 
+                      type="text" 
+                      value={meta.label} 
+                      onChange={e => {
+                        const newMeta = [...reportInfo.customMeta];
+                        newMeta[idx].label = e.target.value;
+                        setReportInfo({...reportInfo, customMeta: newMeta});
+                      }}
+                      className="text-[9px] sm:text-[10px] font-black text-blue-600 tracking-widest uppercase bg-transparent outline-none border-b border-dashed border-blue-300 focus:border-blue-600 w-2/3 transition-all"
+                      placeholder="NAMA KOLOM..."
+                    />
+                    <button 
+                      onClick={() => {
+                        const newMeta = reportInfo.customMeta.filter(m => m.id !== meta.id);
+                        setReportInfo({...reportInfo, customMeta: newMeta});
+                      }} 
+                      className="text-[9px] text-red-400 hover:text-red-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity bg-red-50 px-2 py-0.5 rounded"
+                    >
+                      HAPUS
+                    </button>
+                  </div>
+                  <input 
+                    type="text" 
+                    value={meta.value} 
+                    onChange={e => {
+                      const newMeta = [...reportInfo.customMeta];
+                      newMeta[idx].value = e.target.value;
+                      setReportInfo({...reportInfo, customMeta: newMeta});
+                    }} 
+                    className="w-full p-3.5 sm:p-4 bg-slate-50 border-2 border-transparent rounded-2xl sm:rounded-3xl font-black text-slate-800 focus:border-blue-500 outline-none transition-all shadow-inner text-sm" 
+                  />
+                </div>
+              ))}
+
+              <div className="md:col-span-2 flex justify-start items-center mt-1 mb-2">
+                <button 
+                  onClick={() => {
+                    const newMeta = [...(reportInfo.customMeta || []), { id: `m${Date.now()}`, label: 'KOLOM BARU', value: '' }];
+                    setReportInfo({...reportInfo, customMeta: newMeta});
+                  }} 
+                  className="bg-blue-50 hover:bg-blue-100 text-blue-600 text-[9px] sm:text-[10px] font-black uppercase tracking-widest py-2.5 px-4 rounded-xl transition-all flex items-center gap-1.5"
+                >
+                  <Plus size={14}/> Tambah Info
+                </button>
+              </div>
+
+              {/* TAHUN TETAP */}
               <div className="md:col-span-2">
-                <label className="text-[9px] sm:text-[10px] font-black text-slate-400 tracking-widest ml-2">Pekerjaan</label>
-                <input type="text" value={reportInfo.project} onChange={e => setReportInfo({...reportInfo, project: e.target.value})} className="w-full p-3.5 sm:p-4 bg-slate-50 border-2 border-transparent rounded-2xl sm:rounded-3xl font-black text-slate-800 focus:border-blue-500 outline-none transition-all shadow-inner text-sm" />
-              </div>
-              <div>
-                <label className="text-[9px] sm:text-[10px] font-black text-slate-400 tracking-widest ml-2">Instansi</label>
-                <input type="text" value={reportInfo.department} onChange={e => setReportInfo({...reportInfo, department: e.target.value})} className="w-full p-3.5 sm:p-4 bg-slate-50 border-2 border-transparent rounded-2xl sm:rounded-3xl font-black text-slate-800 focus:border-blue-500 outline-none transition-all shadow-inner text-sm" />
-              </div>
-              <div>
-                <label className="text-[9px] sm:text-[10px] font-black text-slate-400 tracking-widest ml-2">Tahun</label>
+                <label className="text-[9px] sm:text-[10px] font-black text-slate-400 tracking-widest ml-2 block mb-1 uppercase">Tahun (Tetap)</label>
                 <input type="text" value={reportInfo.date} onChange={e => setReportInfo({...reportInfo, date: e.target.value})} className="w-full p-3.5 sm:p-4 bg-slate-50 border-2 border-transparent rounded-2xl sm:rounded-3xl font-black text-slate-800 focus:border-blue-500 outline-none transition-all shadow-inner text-sm" />
-              </div>
-              <div>
-                <label className="text-[9px] sm:text-[10px] font-black text-slate-400 tracking-widest ml-2">Kontraktor</label>
-                <input type="text" value={reportInfo.contractor || ''} onChange={e => setReportInfo({...reportInfo, contractor: e.target.value})} className="w-full p-3.5 sm:p-4 bg-slate-50 border-2 border-transparent rounded-2xl sm:rounded-3xl font-black text-slate-800 focus:border-blue-500 outline-none transition-all shadow-inner text-sm" />
-              </div>
-              <div>
-                <label className="text-[9px] sm:text-[10px] font-black text-slate-400 tracking-widest ml-2">Konsultan</label>
-                <input type="text" value={reportInfo.consultant || ''} onChange={e => setReportInfo({...reportInfo, consultant: e.target.value})} className="w-full p-3.5 sm:p-4 bg-slate-50 border-2 border-transparent rounded-2xl sm:rounded-3xl font-black text-slate-800 focus:border-blue-500 outline-none transition-all shadow-inner text-sm" />
               </div>
 
               {/* TEMA TAMPILAN (TEMPLATE SELECTION) */}
@@ -1306,7 +1518,7 @@ const App = () => {
                    <Upload size={14} className="sm:w-4 sm:h-4 text-blue-600"/> MEGA UPLOAD
                    <input type="file" multiple accept="image/jpeg, image/png, image/webp" className="hidden" onChange={handleMegaUpload} />
                  </label>
-                 <button onClick={handleAddPage} className={`w-full sm:w-auto flex-1 sm:flex-none text-white px-4 sm:px-6 py-3 sm:py-3.5 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black uppercase transition-all active:scale-95 shadow-lg whitespace-nowrap ${reportType === 'progres' ? 'bg-emerald-600' : 'bg-blue-600'}`}>+ HALAMAN BARU</button>
+                 <button onClick={handleAddPage} className={`w-full sm:w-auto flex-1 sm:flex-none text-white px-4 sm:px-6 py-3 sm:py-3.5 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black uppercase transition-all active:scale-95 shadow-lg whitespace-nowrap ${reportType === 'progres' ? 'bg-emerald-600' : 'bg-blue-600'}`}>+ HAL halaman BARU</button>
                </div>
             </div>
           </section>
@@ -1322,13 +1534,14 @@ const App = () => {
                 updatePhoto={(k, v) => updateSpecificPhoto(currentPage-1, i, k, v)} 
                 clearPhoto={() => clearSpecificPhoto(currentPage-1, i)} 
                 handleFileUpload={(e) => handleFileUpload(currentPage-1, i, e)} 
+                showToast={(msg, type) => setStatusMsg({text: msg, type})}
+                fetchGeminiContent={fetchGeminiContent}
               />
             ))}
           </section>
         </main>
       )}
 
-      {}
       {view === 'preview' && (
         <main className="w-full flex flex-col items-center bg-slate-200/50 min-h-screen relative overflow-x-hidden">
           
@@ -1356,7 +1569,6 @@ const App = () => {
          </div>
       </div>
 
-      {}
       {/* --- MODAL PENGINGAT BACKUP (SMART REMINDER) --- */}
       {showReminderModal && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
