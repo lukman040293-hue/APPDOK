@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Camera, Trash2, Image as ImageIcon, Upload, FileDown, Presentation, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle, ShieldAlert, LifeBuoy, Sun, Droplets, Target, ClipboardList, Cloud, FolderOpen, Plus, ArrowLeft, Calendar, Briefcase, FileText, Loader2, WifiOff, HardDrive, UploadCloud, Lock, User, LogOut, ZoomIn, ZoomOut, Maximize, Smartphone, Palette, Sparkles, Wand2 } from 'lucide-react';
+import { Camera, Trash2, Image as ImageIcon, Upload, FileDown, Presentation, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle, ShieldAlert, LifeBuoy, Sun, Droplets, Target, ClipboardList, Cloud, FolderOpen, Plus, ArrowLeft, Calendar, Briefcase, FileText, Loader2, WifiOff, HardDrive, UploadCloud, Lock, User, LogOut, ZoomIn, ZoomOut, Maximize, Smartphone, Palette } from 'lucide-react';
 
 // --- FIREBASE IMPORTS ---
 import { initializeApp } from 'firebase/app';
@@ -27,75 +27,13 @@ try {
   console.error("Gagal inisialisasi Firebase", e);
 }
 
-// --- GEMINI API SETUP ---
-const geminiApiKey = ""; // Environment provides the key at runtime
-
-const fetchGeminiContent = async (prompt, base64Image = null) => {
-  const parts = [{ text: prompt }];
-  
-  if (base64Image) {
-    const mimeType = base64Image.match(/data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+).*,.*/)?.[1] || "image/jpeg";
-    const base64Data = base64Image.split(',')[1];
-    parts.push({ inlineData: { mimeType, data: base64Data } });
-  }
-
-  const payload = {
-    contents: [{ role: "user", parts }],
-    systemInstruction: { 
-      parts: [{ text: "Anda adalah asisten AI ahli untuk insinyur sipil dan pengawas proyek. Jawab dalam bahasa Indonesia yang formal, ringkas, dan teknis." }] 
-    }
-  };
-
-  const maxRetries = 5;
-  const delays = [1000, 2000, 4000, 8000, 16000];
-
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${geminiApiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      const result = await response.json();
-      return result.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    } catch (error) {
-      if (i === maxRetries - 1) throw error;
-      await new Promise(res => setTimeout(res, delays[i])); // Exponential backoff
-    }
-  }
-};
-
-
 // --- AKSES DEFAULT (KODE BAWAAN) ---
 const DEFAULT_EMAIL_IZIN = ['at.file2020@gmail.com', 'admin@gmail.com'];
 const DEFAULT_ADMIN = ['admin@gmail.com', 'at.file2020@gmail.com'];
 
-const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleFileUpload, showToast, fetchGeminiContent }) => {
+const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleFileUpload, showToast }) => {
   const [tab, setTab] = useState('filter');
-  const [isAILoading, setIsAILoading] = useState(false);
   const { zoom = 100, panX = 50, panY = 50, brightness = 100, saturation = 100, progress = 0 } = p;
-
-  const handlePolishText = async () => {
-    if (!p.note) {
-      showToast("Isi catatan terlebih dahulu!", "error");
-      return;
-    }
-    setIsAILoading(true);
-    showToast("AI sedang menyempurnakan teks...", "info");
-    try {
-      const prompt = `Perbaiki dan ubah catatan lapangan acak berikut menjadi kalimat laporan proyek yang profesional, baku, dan jelas dalam bahasa Indonesia. Hanya berikan hasil akhir perbaikannya saja tanpa tambahan teks lain:\n\n"${p.note}"`;
-      const result = await fetchGeminiContent(prompt);
-      if (result) {
-        updatePhoto('note', result.trim());
-        showToast("Teks dirapikan!", "success");
-      }
-    } catch (e) {
-      showToast("Gagal memanggil AI", "error");
-    }
-    setIsAILoading(false);
-  };
 
   return (
     <div className="bg-white rounded-[32px] sm:rounded-[48px] shadow-xl overflow-hidden flex flex-col group border-2 border-transparent hover:border-blue-500 transition-all duration-500 hover:shadow-2xl relative">
@@ -202,18 +140,6 @@ const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleF
             placeholder={reportType === 'progres' ? "Detail progres..." : "Keterangan foto..."} 
             className="w-full p-4 sm:p-5 bg-slate-50 rounded-2xl sm:rounded-[28px] text-xs sm:text-sm h-24 sm:h-28 resize-none border-2 border-transparent focus:bg-white focus:border-blue-100 transition-all leading-relaxed outline-none shadow-inner" 
           />
-          {p?.src && (
-            <div className="flex flex-wrap gap-2 w-full">
-              <button 
-                onClick={handlePolishText} 
-                disabled={isAILoading || !p?.note} 
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black uppercase transition-all shadow-sm disabled:opacity-50"
-              >
-                {isAILoading ? <Loader2 size={12} className="animate-spin"/> : <Wand2 size={12}/>}
-                ✨ Perbaiki Teks
-              </button>
-            </div>
-          )}
         </div>
       </div>
     </div>
@@ -1508,7 +1434,6 @@ const App = () => {
                 clearPhoto={() => clearSpecificPhoto(currentPage-1, i)} 
                 handleFileUpload={(e) => handleFileUpload(currentPage-1, i, e)} 
                 showToast={(msg, type) => setStatusMsg({text: msg, type})}
-                fetchGeminiContent={fetchGeminiContent}
               />
             ))}
           </section>
