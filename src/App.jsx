@@ -77,25 +77,6 @@ const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleF
   const [isAILoading, setIsAILoading] = useState(false);
   const { zoom = 100, panX = 50, panY = 50, brightness = 100, saturation = 100, progress = 0 } = p;
 
-  const handleAutoCaption = async () => {
-    if (!p.src) return;
-    setIsAILoading(true);
-    showToast("AI sedang menganalisis foto...", "info");
-    try {
-      const prompt = reportType === 'progres'
-        ? "Analisis foto konstruksi ini. Buatkan 1-2 kalimat teknis singkat yang menjelaskan progres fisik yang terlihat di lapangan."
-        : "Analisis foto lapangan ini. Buatkan 1-2 kalimat observasi singkat dan profesional yang mendeskripsikan kondisi utama yang terlihat.";
-      const result = await fetchGeminiContent(prompt, p.src);
-      if (result) {
-        updatePhoto('note', result.trim());
-        showToast("Deskripsi berhasil dibuat!", "success");
-      }
-    } catch (e) {
-      showToast("Gagal memanggil AI", "error");
-    }
-    setIsAILoading(false);
-  };
-
   const handlePolishText = async () => {
     if (!p.note) {
       showToast("Isi catatan terlebih dahulu!", "error");
@@ -223,14 +204,6 @@ const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleF
           />
           {p?.src && (
             <div className="flex flex-wrap gap-2 w-full">
-              <button 
-                onClick={handleAutoCaption} 
-                disabled={isAILoading} 
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 bg-purple-50 text-purple-700 hover:bg-purple-100 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black uppercase transition-all shadow-sm disabled:opacity-50"
-              >
-                {isAILoading ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>}
-                ✨ AI Analisis Foto
-              </button>
               <button 
                 onClick={handlePolishText} 
                 disabled={isAILoading || !p?.note} 
