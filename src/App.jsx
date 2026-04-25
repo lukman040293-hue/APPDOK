@@ -135,11 +135,11 @@ const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleF
           <div className="flex flex-col gap-3 w-full px-6 sm:px-10 text-center">
             <label className={`w-full text-white py-3 sm:py-4 rounded-2xl sm:rounded-3xl text-[10px] font-black uppercase cursor-pointer flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all ${reportType === 'progres' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-blue-600 hover:bg-blue-500'}`}>
               <Camera size={18} className="sm:w-5 sm:h-5"/> AMBIL KAMERA
-              <input type="file" accept="image/jpeg, image/png, image/webp" capture="environment" className="hidden" onChange={handleFileUpload} />
+              <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFileUpload} />
             </label>
             <label className="w-full cursor-pointer bg-slate-100 text-slate-500 py-3 sm:py-3.5 rounded-2xl sm:rounded-3xl text-[10px] font-black uppercase flex items-center justify-center gap-2 active:scale-95 hover:bg-slate-200 transition-all">
               <ImageIcon size={16} className="sm:w-4 sm:h-4"/> PILIH GALERI
-              <input type="file" accept="image/jpeg, image/png, image/webp" className="hidden" onChange={handleFileUpload} />
+              <input type="file" accept="image/*" className="hidden" onChange={handleFileUpload} />
             </label>
           </div>
         )}
@@ -1409,7 +1409,7 @@ const App = () => {
                       <label className="cursor-pointer flex flex-col items-center justify-center w-full h-full text-slate-400 hover:bg-slate-100 transition-all">
                         <Upload size={14} className="mb-0.5 sm:mb-1 sm:w-4 sm:h-4" />
                         <span className="text-[7px] sm:text-[8px] font-black uppercase">Logo {idx === 0 ? 'Kiri' : idx === 1 ? 'Tengah' : 'Kanan'}</span>
-                        <input type="file" accept="image/jpeg, image/png, image/webp" className="hidden" onChange={(e) => handleLogoUpload(idx, e)} />
+                        <input type="file" accept="image/*" className="hidden" onChange={(e) => handleLogoUpload(idx, e)} />
                       </label>
                     )}
                   </div>
@@ -1516,7 +1516,7 @@ const App = () => {
                  </button>
                  <label className="flex-1 sm:flex-none bg-white text-slate-900 px-3 sm:px-5 py-3 sm:py-3.5 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black uppercase cursor-pointer flex items-center justify-center gap-1.5 sm:gap-3 transition-all active:scale-95 shadow-md whitespace-nowrap">
                    <Upload size={14} className="sm:w-4 sm:h-4 text-blue-600"/> MEGA UPLOAD
-                   <input type="file" multiple accept="image/jpeg, image/png, image/webp" className="hidden" onChange={handleMegaUpload} />
+                   <input type="file" multiple accept="image/*" className="hidden" onChange={handleMegaUpload} />
                  </label>
                  <button onClick={handleAddPage} className={`w-full sm:w-auto flex-1 sm:flex-none text-white px-4 sm:px-6 py-3 sm:py-3.5 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black uppercase transition-all active:scale-95 shadow-lg whitespace-nowrap ${reportType === 'progres' ? 'bg-emerald-600' : 'bg-blue-600'}`}>+ HAL halaman BARU</button>
                </div>
