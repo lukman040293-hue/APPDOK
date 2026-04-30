@@ -1,6 +1,28 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Camera, Trash2, Image as ImageIcon, Upload, FileDown, Presentation, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle, ShieldAlert, LifeBuoy, Sun, Droplets, Target, ClipboardList, Cloud, FolderOpen, Plus, ArrowLeft, Calendar, Briefcase, FileText, Loader2, WifiOff, HardDrive, UploadCloud, Lock, User, LogOut, ZoomIn, ZoomOut, Maximize, Smartphone, Palette, Filter, Save } from 'lucide-react';
 
+// --- MENCEGAH LOG ERROR KUOTA FIREBASE AGAR TIDAK MUNCUL DI LAYAR ---
+const originalConsoleError = console.error;
+console.error = (...args) => {
+  try {
+    const combined = args.map(a => {
+      if (typeof a === 'string') return a;
+      if (a instanceof Error) return a.message;
+      if (a && typeof a === 'object' && a.message) return a.message;
+      return String(a);
+    }).join(' ');
+    
+    // Jika mengandung kata kunci error kuota, sembunyikan sepenuhnya
+    if (combined.includes('resource-exhausted') || 
+        combined.includes('Quota') || 
+        combined.includes('quota') ||
+        combined.includes('maximum backoff delay')) {
+      return; 
+    }
+  } catch (e) {}
+  originalConsoleError.apply(console, args);
+};
+
 // --- FIREBASE IMPORTS ---
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
@@ -24,7 +46,8 @@ try {
   db = getFirestore(app);
   appId = firebaseConfig.projectId;
 } catch (e) {
-  console.error("Gagal inisialisasi Firebase", e);
+  // Biarkan error inisialisasi awal tidak teredam agar bisa terdeteksi jika ada bug lain
+  originalConsoleError("Gagal inisialisasi Firebase", e);
 }
 
 // --- AKSES DEFAULT (KODE BAWAAN) ---
@@ -196,7 +219,8 @@ const App = () => {
   const [bakedPages, setBakedPages] = useState(null);
   const [shouldTriggerDownload, setShouldTriggerDownload] = useState(false);
   
-  const lastSavedHashRef = useRef({}); // Menyimpan rekam jejak foto terakhir
+  const lastSavedHashRef = useRef({}); 
+  const [isOfflineMode, setIsOfflineMode] = useState(false); // FLAG MODE LOKAL
   
   // MODAL STATES
   const [showClearModal, setShowClearModal] = useState(false);
@@ -217,6 +241,17 @@ const App = () => {
   const currentAdmins = useMemo(() => Array.from(new Set([...DEFAULT_ADMIN.map(e=>e.toLowerCase()), ...(accessData?.admins || []).map(e=>e.toLowerCase())])), [accessData?.admins]);
   const isAdmin = currentAdmins.includes(activeEmail?.toLowerCase() || '');
 
+  const triggerOfflineMode = () => {
+    setIsOfflineMode(prev => {
+        if (!prev) {
+            setStatusMsg({ text: 'KUOTA PENUH! Mode Lokal Aktif.', type: 'error' });
+            setTimeout(() => setStatusMsg({ text: '', type: '' }), 4000);
+            return true;
+        }
+        return prev;
+    });
+  };
+
   // Menarik daftar pembuat laporan yang unik untuk dropdown filter
   const uniqueAuthors = useMemo(() => {
     const authors = new Set();
@@ -234,7 +269,6 @@ const App = () => {
 
   // --- PENGATURAN NAMA TAB BROWSER ---
   useEffect(() => {
-    // SILAKAN GANTI TULISAN DI DALAM TANDA KUTIP INI SESUAI KEINGINAN ANDA
     document.title = "Aplikasi Dokumentasi"; 
   }, []);
 
@@ -276,20 +310,22 @@ const App = () => {
   }, []);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || isOfflineMode || !db) return;
     const fetchSession = async () => {
       try {
         const snap = await getDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'session', 'active'));
         if (snap.exists() && snap.data().email) {
           setActiveEmail(snap.data().email);
         }
-      } catch (e) {}
+      } catch (e) {
+          if (e.code === 'resource-exhausted' || e.message?.includes('Quota') || e.message?.includes('quota')) triggerOfflineMode();
+      }
     };
     fetchSession();
-  }, [user]);
+  }, [user, isOfflineMode]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || isOfflineMode || !db) return;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_settings', 'access_list');
     
     const unsubscribe = onSnapshot(docRef, (snap) => {
@@ -297,19 +333,23 @@ const App = () => {
         setAccessData(snap.data());
       } else {
         const initialData = { allowed: DEFAULT_EMAIL_IZIN, admins: DEFAULT_ADMIN };
-        setDoc(docRef, initialData).catch(console.error);
+        setDoc(docRef, initialData).catch(e => {
+            if (e.code === 'resource-exhausted' || e.message?.includes('Quota') || e.message?.includes('quota')) triggerOfflineMode();
+        });
         setAccessData(initialData);
       }
     }, (error) => {
-       console.error(error);
+       if (error.code === 'resource-exhausted' || error.message?.includes('Quota') || error.message?.includes('quota')) {
+           triggerOfflineMode();
+       }
     });
 
     return () => unsubscribe();
-  }, [user]);
+  }, [user, isOfflineMode]);
 
-  // SINKRONISASI LATAR BELAKANG: Selalu aktif di semua view (editor/dashboard)
+  // SINKRONISASI LATAR BELAKANG
   useEffect(() => {
-    if (!user || !activeEmail) return;
+    if (!user || !activeEmail || isOfflineMode || !db) return;
     
     const projCol = collection(db, 'artifacts', appId, 'public', 'data', 'docufield_projects');
     const unsubscribe = onSnapshot(projCol, (snap) => {
@@ -325,15 +365,13 @@ const App = () => {
       loaded.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
       setProjects(loaded);
     }, (err) => { 
-      console.error("Gagal sinkron data:", err); 
-      if(err.code === 'resource-exhausted' || err.message.includes('Quota') || err.message.includes('quota')) {
-         setStatusMsg({ text: 'KUOTA CLOUD PENUH. MODE LOKAL AKTIF.', type: 'error' });
-         setTimeout(() => setStatusMsg({ text: '', type: '' }), 4000);
+      if(err.code === 'resource-exhausted' || err.message?.includes('Quota') || err.message?.includes('quota')) {
+         triggerOfflineMode();
       }
     });
 
     return () => unsubscribe();
-  }, [user, activeEmail, currentAdmins]);
+  }, [user, activeEmail, currentAdmins, isOfflineMode]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -348,6 +386,7 @@ const App = () => {
     }
 
     try {
+       if (isOfflineMode || !db) throw { code: 'resource-exhausted' };
        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_settings', 'access_list');
        const snap = await getDoc(docRef);
        
@@ -361,22 +400,35 @@ const App = () => {
 
        if (isAllowed) {
           setActiveEmail(email);
-          await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'session', 'active'), { email });
+          await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'session', 'active'), { email }).catch(()=>{});
           setStatusMsg({ text: '', type: '' });
        } else {
           setLoginError(`Akses Ditolak: Email "${email}" tidak terdaftar.`); 
           setStatusMsg({ text: '', type: '' });
        }
     } catch (err) { 
-       setLoginError('Terjadi kesalahan membaca data server.');
-       setStatusMsg({ text: '', type: '' });
+       if (err.code === 'resource-exhausted' || err.message?.includes('Quota') || err.message?.includes('offline') || err.message?.includes('quota')) {
+           triggerOfflineMode();
+           const combinedAllowed = DEFAULT_EMAIL_IZIN.map(e=>e.toLowerCase());
+           if (combinedAllowed.includes(email)) {
+              setActiveEmail(email);
+              setStatusMsg({ text: 'MODE LOKAL AKTIF', type: 'error' });
+              setTimeout(() => setStatusMsg({ text: '', type: '' }), 3000);
+           } else {
+              setLoginError(`Gagal akses Cloud. Hanya email bawaan yang bisa masuk saat mode luring.`); 
+              setStatusMsg({ text: '', type: '' });
+           }
+       } else {
+           setLoginError('Terjadi kesalahan membaca data server.');
+           setStatusMsg({ text: '', type: '' });
+       }
     }
   };
 
   const handleLogout = async () => { 
       setActiveEmail(null); 
       try {
-          if (user) await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'session', 'active'));
+          if (user && !isOfflineMode && db) await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'session', 'active'));
       } catch (e) {}
   };
 
@@ -417,6 +469,7 @@ const App = () => {
   };
 
   const saveAccessToCloud = async (newData) => {
+    if (isOfflineMode || !db) { setStatusMsg({ text: 'Tidak bisa kelola akses di Mode Lokal', type: 'error' }); setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000); return; }
     try {
       setStatusMsg({ text: 'Menyimpan Pengaturan...', type: 'info' });
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_settings', 'access_list'), newData);
@@ -440,7 +493,13 @@ const App = () => {
   // FUNGSI BATCH WRITE SUPER CEPAT 
   // =========================================================================
   const saveToCloudNow = async (id, info, pagesObj, type, emailToSave, timeToSave) => {
-    if (!user || !id) return Promise.resolve();
+    if (!user || !id) return Promise.resolve(false);
+    if (isOfflineMode || !db) {
+      setStatusMsg({ text: 'MODE LOKAL. SIMPAN KE MENTAHAN!', type: 'error' });
+      setTimeout(() => setStatusMsg({ text: '', type: '' }), 3000);
+      return Promise.resolve(false);
+    }
+    
     try {
       setSaveStatus('saving');
       
@@ -457,7 +516,6 @@ const App = () => {
       });
 
       // FITUR BARU: Deteksi Perubahan Data (Dirty Checking)
-      // Hanya mengunggah Halaman yang fotonya/teksnya benar-benar diubah.
       for (let i = 0; i < pagesObj.umum.length; i++) {
          const currentStr = JSON.stringify(pagesObj.umum[i]);
          if (lastSavedHashRef.current[`${id}_umum_${i}`] !== currentStr) {
@@ -466,7 +524,6 @@ const App = () => {
              lastSavedHashRef.current[`${id}_umum_${i}`] = currentStr;
          }
       }
-      // Hapus sisa halaman kosong (proses hapus ini ukuran datanya 0 Bytes, jadi sangat cepat & aman)
       for(let i = pagesObj.umum.length; i < 50; i++) {
          const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_umum_page_${i}`);
          batch.delete(pageRef);
@@ -491,9 +548,8 @@ const App = () => {
       return true;
     } catch (error) { 
       setSaveStatus('error'); 
-      console.error("Gagal Upload:", error); 
-      if (error.message && (error.message.includes('Quota') || error.message.includes('quota'))) {
-         setStatusMsg({ text: 'KUOTA CLOUD PENUH! SIMPAN MENTAHAN JSON.', type: 'error' });
+      if (error.code === 'resource-exhausted' || (error.message && (error.message.includes('Quota') || error.message.includes('quota')))) {
+         triggerOfflineMode();
       }
       return false;
     }
@@ -517,11 +573,12 @@ const App = () => {
     setView('edit');
     isInitialLoad.current = false;
 
-    if (user) saveToCloudNow(newId, newInfo, newPages, 'umum', activeEmail, now);
+    if (user && !isOfflineMode) saveToCloudNow(newId, newInfo, newPages, 'umum', activeEmail, now);
   };
 
   const openProject = async (project, sessionData = null) => {
     if (!user) { setStatusMsg({ text: 'Mode Offline', type: 'error' }); return; }
+    if (isOfflineMode || !db) { setStatusMsg({ text: 'Mode Offline Aktif', type: 'error' }); setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000); return; }
     
     setActiveProjectId(project.id);
     
@@ -617,8 +674,8 @@ const App = () => {
       setStatusMsg({ text: '', type: '' });
     } catch (e) { 
       setSaveStatus('error'); 
-      if (e.code === 'resource-exhausted' || e.message?.includes('Quota')) {
-          setStatusMsg({ text: 'Kuota Habis! Gunakan BUKA MENTAHAN JSON.', type: 'error' });
+      if (e.code === 'resource-exhausted' || e.message?.includes('Quota') || e.message?.includes('quota')) {
+          triggerOfflineMode();
       } else {
           setStatusMsg({ text: 'Gagal menarik foto', type: 'error' });
       }
@@ -627,7 +684,7 @@ const App = () => {
   };
 
   const executeDeleteProject = async () => {
-    if (!user || !showDeleteProjectModal.project) return;
+    if (!user || !showDeleteProjectModal.project || isOfflineMode || !db) return;
     const proj = showDeleteProjectModal.project;
     setShowDeleteProjectModal({ show: false, project: null });
     setStatusMsg({ text: 'Menghapus Proyek...', type: 'info' });
@@ -651,6 +708,7 @@ const App = () => {
             try {
                 const session = JSON.parse(sessionStr);
                 const restore = async () => {
+                    if (isOfflineMode || !db) return;
                     setSaveStatus('loading');
                     try {
                         const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_projects', session.projectId));
@@ -665,7 +723,7 @@ const App = () => {
             } catch {}
         }
     }
-  }, [user, isAppReady]);
+  }, [user, isAppReady, isOfflineMode]);
 
   useEffect(() => {
     if ((view === 'edit' || view === 'preview') && activeProjectId) {
@@ -757,7 +815,7 @@ const App = () => {
         setView('edit');
         isInitialLoad.current = false;
 
-        if (user) saveToCloudNow(newId, loadedInfo, loadedPages, loadedType, activeEmail, now);
+        if (user && !isOfflineMode) saveToCloudNow(newId, loadedInfo, loadedPages, loadedType, activeEmail, now);
       } catch { setStatusMsg({ text: 'File rusak', type: 'error' }); }
     };
     reader.readAsText(file); e.target.value = '';
@@ -769,10 +827,9 @@ const App = () => {
   const executePendingAction = () => {
     setShowReminderModal(false);
     if (pendingAction === 'dashboard') {
-      setStatusMsg({ text: 'Menyiapkan Dashboard...', type: 'info' });
+      setStatusMsg({ text: 'Kembali ke Dashboard...', type: 'info' });
       
-      // Auto-save HANYA 1 KALI saja saat tombol KEMBALI ditekan
-      if (activeProjectId) {
+      if (activeProjectId && !isOfflineMode) {
         const isOwner = activeEmail === projectAuthor;
         const timeToSave = isOwner ? Date.now() : projectTime;
         saveToCloudNow(activeProjectId, reportInfo, pagesData, reportType, projectAuthor, timeToSave); 
@@ -799,7 +856,7 @@ const App = () => {
       setPagesData({ umum: [], progres: [] }); 
       setBakedPages(null); 
       setActiveProjectId(null); 
-      setTimeout(() => setStatusMsg({ text: '', type: '' }), 1500);
+      setTimeout(() => setStatusMsg({ text: '', type: '' }), 1000);
 
     } else if (pendingAction === 'logout') {
       handleLogout();
@@ -1283,7 +1340,8 @@ const App = () => {
           </div>
           
           <div className="flex items-center gap-2 text-[9px] sm:text-[10px] uppercase font-black tracking-widest sm:ml-4">
-            {!user ? <span className="flex items-center gap-1.5 text-orange-400"><WifiOff size={12} /> OFFLINE</span> : (
+            {!user ? <span className="flex items-center gap-1.5 text-orange-400"><WifiOff size={12} /> OFFLINE</span> : 
+             isOfflineMode ? <span className="flex items-center gap-1.5 text-red-500"><WifiOff size={12} /> LOKAL</span> : (
               <>
                 {saveStatus === 'loading' && <span className="flex items-center gap-1.5 text-blue-400"><Loader2 size={12} className="animate-spin" /> Load...</span>}
                 {saveStatus === 'saving' && <span className="flex items-center gap-1.5 text-blue-400"><Loader2 size={12} className="animate-spin" /> Mengirim...</span>}
@@ -1301,7 +1359,7 @@ const App = () => {
                 <ArrowLeft size={14} /> <span className="hidden sm:inline">KEMBALI</span>
               </button>
               
-              <button onClick={saveCurrentProject} disabled={saveStatus === 'saving'} className="shrink-0 flex items-center gap-1.5 sm:gap-2 bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-bold transition-all disabled:opacity-50 shadow-lg shadow-blue-500/30">
+              <button onClick={saveCurrentProject} disabled={saveStatus === 'saving' || isOfflineMode} className="shrink-0 flex items-center gap-1.5 sm:gap-2 bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-bold transition-all disabled:opacity-50 shadow-lg shadow-blue-500/30">
                 {saveStatus === 'saving' ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} 
                 <span className="hidden sm:inline">SIMPAN CLOUD</span>
               </button>
@@ -1367,10 +1425,15 @@ const App = () => {
               <button onClick={createNewProject} className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white px-4 sm:px-8 py-3.5 sm:py-4 rounded-2xl sm:rounded-[24px] font-black uppercase text-[10px] sm:text-xs flex items-center justify-center gap-2 sm:gap-3 shadow-xl shadow-blue-500/30 transition-all active:scale-95"><Plus size={16} className="sm:w-5 sm:h-5"/> BUAT LAPORAN</button>
             </div>
           </div>
-          {!user ? (
+          {isOfflineMode ? (
             <div className="bg-orange-50 rounded-[32px] sm:rounded-[40px] border-2 border-dashed border-orange-200 p-8 sm:p-10 flex flex-col items-center justify-center text-center">
-              <WifiOff size={40} className="text-orange-400 mb-4 sm:mb-6 sm:w-12 sm:h-12" /><h3 className="text-lg sm:text-xl font-black text-orange-700 mb-2">Offline</h3>
-              <p className="text-orange-600 max-w-lg mb-6 text-xs sm:text-sm">Pekerjaan tidak tersinkron. Gunakan BUKA MENTAHAN atau buat baru, dan ingat klik MENTAHAN untuk backup lokal.</p>
+              <WifiOff size={40} className="text-orange-400 mb-4 sm:mb-6 sm:w-12 sm:h-12" /><h3 className="text-lg sm:text-xl font-black text-orange-700 mb-2">Mode Lokal (Offline)</h3>
+              <p className="text-orange-600 max-w-lg mb-6 text-xs sm:text-sm">Anda telah melampaui batas kuota Firebase harian. Koneksi cloud dihentikan untuk keamanan. Anda bisa lanjut bekerja dengan aman menggunakan fitur <strong>BUKA MENTAHAN</strong> dan <strong>MENTAHAN (.json)</strong>.</p>
+            </div>
+          ) : !user ? (
+            <div className="bg-slate-100 rounded-[32px] sm:rounded-[40px] border-2 border-dashed border-slate-300 p-8 sm:p-10 flex flex-col items-center justify-center text-center">
+              <Loader2 size={40} className="text-blue-400 mb-4 sm:mb-6 sm:w-12 sm:h-12 animate-spin" /><h3 className="text-lg sm:text-xl font-black text-slate-700 mb-2">Menyambungkan ke Cloud</h3>
+              <p className="text-slate-500 max-w-lg mb-6 text-xs sm:text-sm">Mohon tunggu sebentar...</p>
             </div>
           ) : filteredProjects.length === 0 ? (
             <div className="bg-white rounded-[32px] sm:rounded-[40px] border-2 border-dashed border-slate-300 p-10 sm:p-16 flex flex-col items-center justify-center text-center">
