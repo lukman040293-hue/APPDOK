@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Camera, Trash2, Image as ImageIcon, Upload, FileDown, Presentation, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle, ShieldAlert, LifeBuoy, Sun, Droplets, Target, ClipboardList, Cloud, FolderOpen, Plus, ArrowLeft, Calendar, Briefcase, FileText, Loader2, WifiOff, HardDrive, UploadCloud, Lock, User, LogOut, ZoomIn, ZoomOut, Maximize, Smartphone, Palette, Filter } from 'lucide-react';
+import { Camera, Trash2, Image as ImageIcon, Upload, FileDown, Presentation, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle, ShieldAlert, LifeBuoy, Sun, Droplets, Target, ClipboardList, Cloud, FolderOpen, Plus, ArrowLeft, Calendar, Briefcase, FileText, Loader2, WifiOff, HardDrive, UploadCloud, Lock, User, LogOut, ZoomIn, ZoomOut, Maximize, Smartphone, Palette, Filter, Save } from 'lucide-react';
 
 // --- FIREBASE IMPORTS ---
 import { initializeApp } from 'firebase/app';
@@ -209,7 +209,7 @@ const App = () => {
   const [newEmailUser, setNewEmailUser] = useState('');
   const [newEmailAdmin, setNewEmailAdmin] = useState(false);
   const [previewZoom, setPreviewZoom] = useState(1);
-  const [filterEmail, setFilterEmail] = useState('all'); // State untuk filter user admin
+  const [filterEmail, setFilterEmail] = useState('all'); 
 
   const currentAllowed = useMemo(() => Array.from(new Set([...DEFAULT_EMAIL_IZIN.map(e=>e.toLowerCase()), ...(accessData?.allowed || []).map(e=>e.toLowerCase())])), [accessData?.allowed]);
   const currentAdmins = useMemo(() => Array.from(new Set([...DEFAULT_ADMIN.map(e=>e.toLowerCase()), ...(accessData?.admins || []).map(e=>e.toLowerCase())])), [accessData?.admins]);
@@ -243,7 +243,7 @@ const App = () => {
     const handleBeforeUnload = (e) => {
       if (saveStatus === 'saving') {
         e.preventDefault();
-        e.returnValue = ''; // Memicu dialog "Are you sure you want to leave?" di browser
+        e.returnValue = ''; 
       }
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
@@ -253,9 +253,8 @@ const App = () => {
   useEffect(() => {
     const initAuth = async () => {
       try {
-        // Langsung menggunakan sistem autentikasi anonim mandiri milik Firebase Anda
         await signInAnonymously(auth);
-        setDebugError(''); // Bersihkan peringatan error (jika sebelumnya ada)
+        setDebugError(''); 
       } catch (err) {
         setDebugError(err.message); 
       }
@@ -299,7 +298,9 @@ const App = () => {
         setDoc(docRef, initialData).catch(console.error);
         setAccessData(initialData);
       }
-    }, () => {});
+    }, (error) => {
+       console.error(error);
+    });
 
     return () => unsubscribe();
   }, [user]);
@@ -323,6 +324,10 @@ const App = () => {
       setProjects(loaded);
     }, (err) => { 
       console.error("Gagal sinkron data:", err); 
+      if(err.code === 'resource-exhausted' || err.message.includes('Quota') || err.message.includes('quota')) {
+         setStatusMsg({ text: 'KUOTA CLOUD PENUH. MODE LOKAL AKTIF.', type: 'error' });
+         setTimeout(() => setStatusMsg({ text: '', type: '' }), 4000);
+      }
     });
 
     return () => unsubscribe();
@@ -430,7 +435,7 @@ const App = () => {
   }, [view]);
 
   // =========================================================================
-  // FUNGSI BATCH WRITE SUPER CEPAT DENGAN PROSES LATAR BELAKANG
+  // FUNGSI BATCH WRITE SUPER CEPAT 
   // =========================================================================
   const saveToCloudNow = async (id, info, pagesObj, type, emailToSave, timeToSave) => {
     if (!user || !id) return Promise.resolve();
@@ -473,7 +478,10 @@ const App = () => {
       return true;
     } catch (error) { 
       setSaveStatus('error'); 
-      console.error("Gagal Upload Latar Belakang:", error); 
+      console.error("Gagal Upload:", error); 
+      if (error.message && (error.message.includes('Quota') || error.message.includes('quota'))) {
+         setStatusMsg({ text: 'KUOTA CLOUD PENUH! SIMPAN MENTAHAN JSON.', type: 'error' });
+      }
       return false;
     }
   };
@@ -578,8 +586,12 @@ const App = () => {
       setStatusMsg({ text: '', type: '' });
     } catch (e) { 
       setSaveStatus('error'); 
-      setStatusMsg({ text: 'Gagal menarik foto', type: 'error' });
-      setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
+      if (e.code === 'resource-exhausted' || e.message?.includes('Quota')) {
+          setStatusMsg({ text: 'Kuota Habis! Gunakan BUKA MENTAHAN JSON.', type: 'error' });
+      } else {
+          setStatusMsg({ text: 'Gagal menarik foto', type: 'error' });
+      }
+      setTimeout(() => setStatusMsg({ text: '', type: '' }), 4000);
     }
   };
 
@@ -634,23 +646,18 @@ const App = () => {
     }
   }, [view, activeProjectId, reportType, currentPage, reportInfo, projectAuthor, projectTime]);
 
-  // SINGLE AUTO SAVE: Menghapus auto-save ganda yang bentrok agar data konsisten
-  useEffect(() => {
-    if (!user || !activeProjectId || view === 'dashboard') return;
-    
-    if (isInitialLoad.current) {
-        isInitialLoad.current = false;
-        return;
+  const saveCurrentProject = async () => {
+    if (activeProjectId) {
+      const isOwner = activeEmail === projectAuthor;
+      const timeToSave = isOwner ? Date.now() : projectTime;
+      setStatusMsg({ text: 'Menyimpan ke Cloud...', type: 'info' });
+      const success = await saveToCloudNow(activeProjectId, reportInfo, pagesData, reportType, projectAuthor, timeToSave);
+      if (success) {
+         setStatusMsg({ text: 'Tersimpan di Cloud!', type: 'success' });
+      }
+      setTimeout(() => setStatusMsg({ text: '', type: '' }), 3000);
     }
-
-    const timeoutId = setTimeout(() => {
-        const isOwner = activeEmail === projectAuthor;
-        const timeToSave = isOwner ? Date.now() : projectTime;
-
-        saveToCloudNow(activeProjectId, reportInfo, pagesData, reportType, projectAuthor, timeToSave);
-    }, 2500);
-    return () => clearTimeout(timeoutId);
-  }, [reportInfo, pagesData, reportType, activeProjectId, user, view, activeEmail, projectAuthor, projectTime, retryTrigger]);
+  };
 
   useEffect(() => {
     const loadScript = (src, id) => new Promise((resolve) => {
@@ -729,20 +736,37 @@ const App = () => {
   const executePendingAction = () => {
     setShowReminderModal(false);
     if (pendingAction === 'dashboard') {
-      setStatusMsg({ text: 'Menyimpan & Sinkronisasi...', type: 'info' });
+      setStatusMsg({ text: 'Menyiapkan Dashboard...', type: 'info' });
       
+      // Auto-save HANYA 1 KALI saja saat tombol KEMBALI ditekan
       if (activeProjectId) {
         const isOwner = activeEmail === projectAuthor;
         const timeToSave = isOwner ? Date.now() : projectTime;
-        // Simpan paksa ke cloud saat tombol kembali ditekan
         saveToCloudNow(activeProjectId, reportInfo, pagesData, reportType, projectAuthor, timeToSave); 
+        
+        setProjects(prevProjects => {
+          const existingIdx = prevProjects.findIndex(p => p.id === activeProjectId);
+          const updatedData = {
+             id: activeProjectId,
+             reportInfo: reportInfo,
+             lastActiveTab: reportType,
+             pageCountUmum: pagesData.umum.length,
+             pageCountProgres: pagesData.progres.length,
+             updatedAt: timeToSave,
+             authorEmail: projectAuthor
+          };
+          let newArray = [...prevProjects];
+          if (existingIdx >= 0) { newArray[existingIdx] = { ...newArray[existingIdx], ...updatedData }; } 
+          else { newArray.push(updatedData); }
+          return newArray.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+        });
       }
       
       setView('dashboard'); 
       setPagesData({ umum: [], progres: [] }); 
       setBakedPages(null); 
       setActiveProjectId(null); 
-      setTimeout(() => setStatusMsg({ text: '', type: '' }), 1000);
+      setTimeout(() => setStatusMsg({ text: '', type: '' }), 1500);
 
     } else if (pendingAction === 'logout') {
       handleLogout();
@@ -1016,9 +1040,9 @@ const App = () => {
         
         // Sesuaikan warna garis bawah judul PPTX dengan template (opsional, default hitam/hijau)
         const isModernTemplate = reportInfo.template === 'modern';
-        let lineColor = '0F172A'; // Default hitam
-        if (isModernTemplate) lineColor = '3730A3'; // Indigo-800
-        if (reportType === 'progres') lineColor = isModernTemplate ? '059669' : '10B981'; // Emerald
+        let lineColor = reportInfo.template === 'inspeksi' ? '1E3A8A' : '0F172A'; 
+        if (isModernTemplate) lineColor = '3730A3'; 
+        if (reportType === 'progres' && !isModernTemplate && reportInfo.template !== 'inspeksi') lineColor = '10B981'; 
         
         slide.addShape(pptx.ShapeType.line, { x: PAGE_MARGIN_SIDE, y: curY + 0.05, w: CONTENT_W, h: 0, line: { color: lineColor, width: isModernTemplate ? 3 : 2 } });
         
@@ -1051,6 +1075,59 @@ const App = () => {
   const activePageData = useMemo(() => pages[currentPage - 1] || [], [pages, currentPage]);
 
   const ReportPage = ({ data, isFinal = false }) => {
+    const template = reportInfo.template || 'klasik';
+
+    // -------------------------------------------------------------
+    // LOGIKA DESAIN INSPEKSI (TRIBHAKTI FORMAT)
+    // -------------------------------------------------------------
+    if (template === 'inspeksi') {
+      return (
+        <div className={`bg-white w-[210mm] flex flex-col font-sans relative box-border ${isFinal ? 'report-page-final' : 'mb-10 shadow-2xl rounded-sm border border-slate-200 shrink-0'}`} style={{ height: '296.7mm', padding: '12mm 15mm', margin: '0 auto', pageBreakAfter: 'always' }}>
+          
+          {/* Header Mirip Tribhakti */}
+          <div className="text-center mb-4 flex-none">
+            {reportInfo.logos?.[0] ? (
+               <img src={reportInfo.logos[0]} className="h-16 w-auto mx-auto object-contain" alt="Logo" />
+            ) : (
+               <div className="pt-2">
+                 <h1 className="text-3xl font-black text-[#1e3a8a] tracking-wide mb-1" style={{fontFamily: 'Arial, Helvetica, sans-serif'}}>TRIBHAKTI</h1>
+                 <h2 className="text-[10px] font-bold text-[#1e3a8a] tracking-[0.1em]">LABORATORY &amp; INTEGRATED SERVICES</h2>
+               </div>
+            )}
+          </div>
+          
+          {/* Tabel Grid Foto 2 Kolom (Persis seperti Halaman 7-13 PDF) */}
+          <div className="flex-grow flex flex-col">
+            <div className="border-t-[1.5px] border-l-[1.5px] border-black flex flex-wrap w-full bg-white flex-grow">
+              {data.map((p, i) => (
+                <div key={i} className="w-1/2 border-r-[1.5px] border-b-[1.5px] border-black flex flex-col box-border p-1" style={{ height: '33.333%' }}>
+                  <div className="flex-grow overflow-hidden relative bg-white flex items-center justify-center border border-transparent">
+                     {p?.src ? (
+                       <img 
+                          src={p.src} 
+                          className="w-full h-full object-cover" 
+                          style={{ filter: `brightness(${p.brightness || 100}%) saturate(${p.saturation || 100}%)`, transform: `scale(${(p.zoom || 100) / 100})`, transformOrigin: `${p.panX ?? 50}% ${p.panY ?? 50}%` }} 
+                          alt="" 
+                       />
+                     ) : (
+                       <div className="text-slate-200"><ImageIcon size={40}/></div>
+                     )}
+                  </div>
+                  <div className="h-6 flex items-center justify-center text-[8pt] font-bold text-black bg-white mt-1 text-center break-words px-1 line-clamp-2">
+                    {p?.note || '-'}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+        </div>
+      );
+    }
+    
+    // -------------------------------------------------------------
+    // LOGIKA DESAIN KLASIK & MODERN
+    // -------------------------------------------------------------
     const cMeta = reportInfo.customMeta || [
         { id: 'm1', label: 'Pekerjaan', value: reportInfo.project || '' },
         { id: 'm2', label: 'Instansi', value: reportInfo.department || '' },
@@ -1062,31 +1139,22 @@ const App = () => {
         { l: "Tahun", v: reportInfo.date }
     ];
     
-    // --- TEMPLATE STYLING LOGIC ---
-    const template = reportInfo.template || 'klasik';
     const isModern = template === 'modern';
-    
     const baseFontClass = isModern ? 'font-serif text-slate-800' : 'font-sans text-black';
     const headerTitleClass = isModern ? 'text-indigo-950 tracking-wide font-bold' : 'text-slate-900 font-black';
     
     // Header Border Color based on Template and Report Type
     let headerBorderClass = 'border-b-2 border-slate-900';
-    if (isModern) {
-        headerBorderClass = reportType === 'progres' ? 'border-b-4 border-emerald-700' : 'border-b-4 border-indigo-800';
-    } else {
-        headerBorderClass = reportType === 'progres' ? 'border-b-2 border-emerald-500' : 'border-b-2 border-slate-900';
-    }
+    if (isModern) headerBorderClass = reportType === 'progres' ? 'border-b-4 border-emerald-700' : 'border-b-4 border-indigo-800';
+    else headerBorderClass = reportType === 'progres' ? 'border-b-2 border-emerald-500' : 'border-b-2 border-slate-900';
 
     const cardContainerClass = isModern ? 'border border-indigo-100 shadow-md rounded-2xl' : 'border border-slate-200 shadow-sm rounded-xl';
     const imgContainerClass = isModern ? 'rounded-xl' : 'rounded-lg';
     
     // Note left-border line color
     let noteBorderClass = 'border-blue-500';
-    if (isModern) {
-        noteBorderClass = reportType === 'progres' ? 'border-emerald-600' : 'border-indigo-500';
-    } else {
-        noteBorderClass = reportType === 'progres' ? 'border-emerald-500' : 'border-blue-500';
-    }
+    if (isModern) noteBorderClass = reportType === 'progres' ? 'border-emerald-600' : 'border-indigo-500';
+    else noteBorderClass = reportType === 'progres' ? 'border-emerald-500' : 'border-blue-500';
 
     return (
       <div className={`bg-white w-[210mm] flex flex-col ${baseFontClass} relative box-border ${isFinal ? 'report-page-final' : 'mb-10 shadow-2xl rounded-2xl border border-slate-200 shrink-0'}`} style={{ height: '296.7mm', padding: '6mm 15mm 15mm 15mm', margin: '0 auto', pageBreakAfter: 'always' }}>
@@ -1199,6 +1267,12 @@ const App = () => {
               <button onClick={() => { setPendingAction('dashboard'); setShowReminderModal(true); }} className="shrink-0 flex items-center gap-1.5 sm:gap-2 bg-white/10 hover:bg-white/20 px-3 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-bold transition-all">
                 <ArrowLeft size={14} /> <span className="hidden sm:inline">KEMBALI</span>
               </button>
+              
+              <button onClick={saveCurrentProject} disabled={saveStatus === 'saving'} className="shrink-0 flex items-center gap-1.5 sm:gap-2 bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-bold transition-all disabled:opacity-50 shadow-lg shadow-blue-500/30">
+                {saveStatus === 'saving' ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} 
+                <span className="hidden sm:inline">SIMPAN CLOUD</span>
+              </button>
+
               <div className="w-px h-6 bg-white/20 mx-1 shrink-0"></div>
               
               <button onClick={() => setView('edit')} className={`shrink-0 px-3 py-2 sm:px-5 sm:py-2.5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-black transition-all ${view === 'edit' ? 'bg-white text-black shadow-lg' : 'text-slate-400 hover:text-white'}`}>EDITOR</button>
@@ -1406,6 +1480,12 @@ const App = () => {
                       className={`min-w-[90px] flex-1 py-3 sm:py-3.5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-black transition-all ${reportInfo.template === 'modern' ? 'bg-indigo-600 shadow-md text-white border border-indigo-700' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}
                    >
                      Modern
+                   </button>
+                   <button 
+                      onClick={() => setReportInfo({...reportInfo, template: 'inspeksi'})} 
+                      className={`min-w-[100px] flex-1 py-3 sm:py-3.5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-black transition-all ${reportInfo.template === 'inspeksi' ? 'bg-[#1e3a8a] shadow-md text-white border border-[#1e3a8a]' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}
+                   >
+                     Format Inspeksi
                    </button>
                 </div>
               </div>
