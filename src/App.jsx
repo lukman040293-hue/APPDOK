@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Camera, Trash2, Image as ImageIcon, Upload, FileDown, Presentation, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle, ShieldAlert, LifeBuoy, Sun, Droplets, Target, ClipboardList, Cloud, FolderOpen, Plus, ArrowLeft, Calendar, Briefcase, FileText, Loader2, WifiOff, HardDrive, UploadCloud, Lock, User, LogOut, ZoomIn, ZoomOut, Maximize, Smartphone, Palette } from 'lucide-react';
+import { Camera, Trash2, Image as ImageIcon, Upload, FileDown, Presentation, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle, ShieldAlert, LifeBuoy, Sun, Droplets, Target, ClipboardList, Cloud, FolderOpen, Plus, ArrowLeft, Calendar, Briefcase, FileText, Loader2, WifiOff, HardDrive, UploadCloud, Lock, User, LogOut, ZoomIn, ZoomOut, Maximize, Smartphone, Palette, Filter } from 'lucide-react';
 
 // --- FIREBASE IMPORTS ---
 import { initializeApp } from 'firebase/app';
@@ -209,10 +209,26 @@ const App = () => {
   const [newEmailUser, setNewEmailUser] = useState('');
   const [newEmailAdmin, setNewEmailAdmin] = useState(false);
   const [previewZoom, setPreviewZoom] = useState(1);
+  const [filterEmail, setFilterEmail] = useState('all'); // State untuk filter user admin
 
   const currentAllowed = useMemo(() => Array.from(new Set([...DEFAULT_EMAIL_IZIN.map(e=>e.toLowerCase()), ...(accessData?.allowed || []).map(e=>e.toLowerCase())])), [accessData?.allowed]);
   const currentAdmins = useMemo(() => Array.from(new Set([...DEFAULT_ADMIN.map(e=>e.toLowerCase()), ...(accessData?.admins || []).map(e=>e.toLowerCase())])), [accessData?.admins]);
   const isAdmin = currentAdmins.includes(activeEmail?.toLowerCase() || '');
+
+  // Menarik daftar pembuat laporan yang unik untuk dropdown filter
+  const uniqueAuthors = useMemo(() => {
+    const authors = new Set();
+    projects.forEach(p => {
+      if (p.authorEmail) authors.add(p.authorEmail);
+    });
+    return Array.from(authors);
+  }, [projects]);
+
+  // Daftar proyek yang sudah difilter
+  const filteredProjects = useMemo(() => {
+    if (!isAdmin || filterEmail === 'all') return projects;
+    return projects.filter(p => p.authorEmail === filterEmail);
+  }, [projects, filterEmail, isAdmin]);
 
   // --- PENGATURAN NAMA TAB BROWSER ---
   useEffect(() => {
@@ -996,7 +1012,7 @@ const App = () => {
             if (reportInfo.logos[i]) {
               // Tempatkan logo berjejer rata kiri
               slide.addImage({ data: reportInfo.logos[i], x: currentX, y: curY, w: 1.8, h: lh, sizing: { type: 'contain' } });
-              currentX += 1.9; // Geser sumbu X untuk logo berikutnya
+              currentX += 1.9; 
             }
           }
         }
@@ -1242,6 +1258,25 @@ const App = () => {
             <div>
               <h2 className="text-2xl sm:text-3xl font-black text-slate-900 mb-2 flex items-center gap-2.5 sm:gap-3"><FolderOpen className="text-blue-600 w-8 h-8 sm:w-9 sm:h-9" /> Arsip Laporan</h2>
               <p className="text-slate-500 font-medium flex items-center gap-2 flex-wrap text-xs sm:text-sm">Masuk sebagai: <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-md font-bold">{activeEmail}</span>{isAdmin && <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded-md font-bold text-[9px] sm:text-[10px] uppercase shadow-sm">👑 Admin</span>}</p>
+              
+              {/* FILTER USER KHUSUS ADMIN */}
+              {isAdmin && projects.length > 0 && (
+                <div className="mt-4 flex flex-wrap items-center gap-2 sm:gap-3 animate-in fade-in slide-in-from-left-4">
+                  <div className="flex items-center gap-1.5 text-[10px] sm:text-xs font-black text-slate-400 uppercase tracking-widest">
+                     <Filter size={14} className="text-blue-500" /> FILTER USER:
+                  </div>
+                  <select 
+                    value={filterEmail} 
+                    onChange={e => setFilterEmail(e.target.value)}
+                    className="bg-white border-2 border-slate-200 focus:border-blue-500 text-slate-700 font-bold text-[10px] sm:text-xs rounded-xl px-3 py-2 outline-none shadow-sm cursor-pointer transition-all"
+                  >
+                    <option value="all">Tampilkan Semua</option>
+                    {uniqueAuthors.map(email => (
+                      <option key={email} value={email}>{email === activeEmail ? `${email} (Saya)` : email}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
             <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
               {isAdmin && <button onClick={() => setShowAccessModal(true)} className="w-full sm:w-auto bg-slate-800 text-white hover:bg-slate-700 px-4 sm:px-6 py-3.5 sm:py-4 rounded-2xl sm:rounded-[24px] font-black uppercase text-[10px] sm:text-xs flex items-center justify-center gap-2 shadow-lg transition-all active:scale-95"><User size={16} className="sm:w-[18px] sm:h-[18px]"/> AKSES</button>}
@@ -1254,13 +1289,15 @@ const App = () => {
               <WifiOff size={40} className="text-orange-400 mb-4 sm:mb-6 sm:w-12 sm:h-12" /><h3 className="text-lg sm:text-xl font-black text-orange-700 mb-2">Offline</h3>
               <p className="text-orange-600 max-w-lg mb-6 text-xs sm:text-sm">Pekerjaan tidak tersinkron. Gunakan BUKA MENTAHAN atau buat baru, dan ingat klik MENTAHAN untuk backup lokal.</p>
             </div>
-          ) : projects.length === 0 ? (
+          ) : filteredProjects.length === 0 ? (
             <div className="bg-white rounded-[32px] sm:rounded-[40px] border-2 border-dashed border-slate-300 p-10 sm:p-16 flex flex-col items-center justify-center text-center">
-              <ClipboardList size={48} className="text-slate-300 mb-4 sm:mb-6 sm:w-16 sm:h-16" /><h3 className="text-lg sm:text-xl font-black text-slate-600 mb-2">Belum Ada Laporan</h3><p className="text-slate-400 text-xs sm:text-sm">Klik buat laporan baru.</p>
+              <ClipboardList size={48} className="text-slate-300 mb-4 sm:mb-6 sm:w-16 sm:h-16" />
+              <h3 className="text-lg sm:text-xl font-black text-slate-600 mb-2">{filterEmail !== 'all' ? 'Tidak Ada Laporan' : 'Belum Ada Laporan'}</h3>
+              <p className="text-slate-400 text-xs sm:text-sm">{filterEmail !== 'all' ? 'User ini belum membuat/menyimpan laporan.' : 'Klik buat laporan baru.'}</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-              {projects.map(p => (
+              {filteredProjects.map(p => (
                 <div key={p.id} className="bg-white rounded-[24px] sm:rounded-[32px] p-5 sm:p-6 shadow-xl border border-slate-200 hover:border-blue-400 transition-all flex flex-col hover:-translate-y-1">
                   <div className="flex justify-between items-start mb-3 sm:mb-4">
                      <span className="px-2 sm:px-3 py-1 rounded-lg sm:rounded-xl text-[9px] sm:text-[10px] font-black uppercase bg-blue-100 text-blue-700">DOKUMENTASI</span>
@@ -1381,18 +1418,18 @@ const App = () => {
               {/* TEMA TAMPILAN (TEMPLATE SELECTION) */}
               <div className="md:col-span-2 mt-4 pt-4 border-t border-slate-100">
                 <label className="text-[9px] sm:text-[10px] font-black text-blue-500 tracking-widest ml-2 flex items-center gap-1.5 mb-2"><Palette size={14} /> TEMA TAMPILAN PDF</label>
-                <div className="flex gap-3 bg-slate-50 p-2 rounded-2xl sm:rounded-3xl shadow-inner border border-slate-200">
+                <div className="flex gap-2 sm:gap-3 bg-slate-50 p-2 rounded-2xl sm:rounded-3xl shadow-inner border border-slate-200 overflow-x-auto">
                    <button 
                       onClick={() => setReportInfo({...reportInfo, template: 'klasik'})} 
-                      className={`flex-1 py-3 sm:py-3.5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-black transition-all ${(!reportInfo.template || reportInfo.template === 'klasik') ? 'bg-white shadow-md text-blue-600 border border-blue-200' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}
+                      className={`min-w-[90px] flex-1 py-3 sm:py-3.5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-black transition-all ${(!reportInfo.template || reportInfo.template === 'klasik') ? 'bg-white shadow-md text-blue-600 border border-blue-200' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}
                    >
-                     Desain Klasik
+                     Klasik
                    </button>
                    <button 
                       onClick={() => setReportInfo({...reportInfo, template: 'modern'})} 
-                      className={`flex-1 py-3 sm:py-3.5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-black transition-all ${reportInfo.template === 'modern' ? 'bg-indigo-600 shadow-md text-white border border-indigo-700' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}
+                      className={`min-w-[90px] flex-1 py-3 sm:py-3.5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-black transition-all ${reportInfo.template === 'modern' ? 'bg-indigo-600 shadow-md text-white border border-indigo-700' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}
                    >
-                     Desain Modern
+                     Modern
                    </button>
                 </div>
               </div>
