@@ -304,9 +304,9 @@ const App = () => {
     return () => unsubscribe();
   }, [user]);
 
+  // SINKRONISASI LATAR BELAKANG: Selalu aktif di semua view (editor/dashboard)
   useEffect(() => {
-    if (!user || view !== 'dashboard' || !activeEmail) return;
-    setSaveStatus('loading');
+    if (!user || !activeEmail) return;
     
     const projCol = collection(db, 'artifacts', appId, 'public', 'data', 'docufield_projects');
     const unsubscribe = onSnapshot(projCol, (snap) => {
@@ -321,12 +321,12 @@ const App = () => {
       });
       loaded.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
       setProjects(loaded);
-      setSaveStatus('saved');
-    }, () => { setSaveStatus('error'); });
+    }, (err) => { 
+      console.error("Gagal sinkron data:", err); 
+    });
 
     return () => unsubscribe();
-  }, [user, view, activeEmail, currentAdmins]);
-
+  }, [user, activeEmail, currentAdmins]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -634,6 +634,7 @@ const App = () => {
     }
   }, [view, activeProjectId, reportType, currentPage, reportInfo, projectAuthor, projectTime]);
 
+  // SINGLE AUTO SAVE: Menghapus auto-save ganda yang bentrok agar data konsisten
   useEffect(() => {
     if (!user || !activeProjectId || view === 'dashboard') return;
     
@@ -650,14 +651,6 @@ const App = () => {
     }, 2500);
     return () => clearTimeout(timeoutId);
   }, [reportInfo, pagesData, reportType, activeProjectId, user, view, activeEmail, projectAuthor, projectTime, retryTrigger]);
-
-  useEffect(() => {
-    if (!user || !activeProjectId || view === 'dashboard') return;
-    const timeoutId = setTimeout(() => {
-        saveToCloudNow(activeProjectId, reportInfo, pagesData, reportType, activeEmail);
-    }, 2500);
-    return () => clearTimeout(timeoutId);
-  }, [reportInfo, pagesData, reportType, activeProjectId, user, view, activeEmail, retryTrigger]);
 
   useEffect(() => {
     const loadScript = (src, id) => new Promise((resolve) => {
@@ -736,37 +729,20 @@ const App = () => {
   const executePendingAction = () => {
     setShowReminderModal(false);
     if (pendingAction === 'dashboard') {
-      setStatusMsg({ text: 'Menyimpan di Latar Belakang...', type: 'info' });
+      setStatusMsg({ text: 'Menyimpan & Sinkronisasi...', type: 'info' });
       
       if (activeProjectId) {
         const isOwner = activeEmail === projectAuthor;
         const timeToSave = isOwner ? Date.now() : projectTime;
-
+        // Simpan paksa ke cloud saat tombol kembali ditekan
         saveToCloudNow(activeProjectId, reportInfo, pagesData, reportType, projectAuthor, timeToSave); 
-        
-        setProjects(prevProjects => {
-          const existingIdx = prevProjects.findIndex(p => p.id === activeProjectId);
-          const updatedData = {
-             id: activeProjectId,
-             reportInfo: reportInfo,
-             lastActiveTab: reportType,
-             pageCountUmum: pagesData.umum.length,
-             pageCountProgres: pagesData.progres.length,
-             updatedAt: timeToSave,
-             authorEmail: projectAuthor
-          };
-          let newArray = [...prevProjects];
-          if (existingIdx >= 0) { newArray[existingIdx] = { ...newArray[existingIdx], ...updatedData }; } 
-          else { newArray.push(updatedData); }
-          return newArray.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-        });
       }
       
       setView('dashboard'); 
       setPagesData({ umum: [], progres: [] }); 
       setBakedPages(null); 
       setActiveProjectId(null); 
-      setTimeout(() => setStatusMsg({ text: '', type: '' }), 1500);
+      setTimeout(() => setStatusMsg({ text: '', type: '' }), 1000);
 
     } else if (pendingAction === 'logout') {
       handleLogout();
