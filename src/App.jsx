@@ -196,6 +196,8 @@ const App = () => {
   const [bakedPages, setBakedPages] = useState(null);
   const [shouldTriggerDownload, setShouldTriggerDownload] = useState(false);
   
+  const lastSavedHashRef = useRef({}); // Menyimpan rekam jejak foto terakhir
+  
   // MODAL STATES
   const [showClearModal, setShowClearModal] = useState(false);
   const [showDeleteProjectModal, setShowDeleteProjectModal] = useState({ show: false, project: null });
@@ -454,18 +456,29 @@ const App = () => {
         authorEmail: emailToSave 
       });
 
+      // FITUR BARU: Deteksi Perubahan Data (Dirty Checking)
+      // Hanya mengunggah Halaman yang fotonya/teksnya benar-benar diubah.
       for (let i = 0; i < pagesObj.umum.length; i++) {
-         const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_umum_page_${i}`);
-         batch.set(pageRef, { index: i, projectId: id, type: 'umum', data: pagesObj.umum[i] });
+         const currentStr = JSON.stringify(pagesObj.umum[i]);
+         if (lastSavedHashRef.current[`${id}_umum_${i}`] !== currentStr) {
+             const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_umum_page_${i}`);
+             batch.set(pageRef, { index: i, projectId: id, type: 'umum', data: pagesObj.umum[i] });
+             lastSavedHashRef.current[`${id}_umum_${i}`] = currentStr;
+         }
       }
+      // Hapus sisa halaman kosong (proses hapus ini ukuran datanya 0 Bytes, jadi sangat cepat & aman)
       for(let i = pagesObj.umum.length; i < 50; i++) {
          const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_umum_page_${i}`);
          batch.delete(pageRef);
       }
 
       for (let i = 0; i < pagesObj.progres.length; i++) {
-         const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_progres_page_${i}`);
-         batch.set(pageRef, { index: i, projectId: id, type: 'progres', data: pagesObj.progres[i] });
+         const currentStr = JSON.stringify(pagesObj.progres[i]);
+         if (lastSavedHashRef.current[`${id}_progres_${i}`] !== currentStr) {
+             const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_progres_page_${i}`);
+             batch.set(pageRef, { index: i, projectId: id, type: 'progres', data: pagesObj.progres[i] });
+             lastSavedHashRef.current[`${id}_progres_${i}`] = currentStr;
+         }
       }
       for(let i = pagesObj.progres.length; i < 50; i++) {
          const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_progres_page_${i}`);
@@ -491,6 +504,8 @@ const App = () => {
     const newInfo = {...defaultReportInfo, title: 'LAPORAN DOKUMENTASI LAPANGAN'};
     const newPages = { umum: [createNewPage()], progres: [createNewPage()] };
     const now = Date.now();
+    
+    lastSavedHashRef.current = {}; // Bersihkan rekam jejak untuk proyek baru
     
     setActiveProjectId(newId);
     setReportInfo(newInfo);
@@ -574,8 +589,24 @@ const App = () => {
            Promise.all(progresPromises)
         ]);
 
-        umumSnaps.forEach(pSnap => { if(pSnap.exists()) loadedUmum.push(pSnap.data().data); });
-        progresSnaps.forEach(pSnap => { if(pSnap.exists()) loadedProgres.push(pSnap.data().data); });
+        const initialHash = {};
+        
+        umumSnaps.forEach(pSnap => { 
+            if(pSnap.exists()) {
+                const data = pSnap.data().data;
+                loadedUmum.push(data); 
+                initialHash[`${project.id}_umum_${pSnap.data().index}`] = JSON.stringify(data);
+            }
+        });
+        progresSnaps.forEach(pSnap => { 
+            if(pSnap.exists()) {
+                const data = pSnap.data().data;
+                loadedProgres.push(data); 
+                initialHash[`${project.id}_progres_${pSnap.data().index}`] = JSON.stringify(data);
+            }
+        });
+        
+        lastSavedHashRef.current = initialHash;
       }
       
       setPagesData({ 
@@ -716,6 +747,8 @@ const App = () => {
               ? { umum: [createNewPage()], progres: data.pages || [createNewPage()] }
               : { umum: data.pages || [createNewPage()], progres: [createNewPage()] };
         }
+        
+        lastSavedHashRef.current = {}; // Bersihkan rekam jejak
         
         setReportInfo(loadedInfo); setReportType(loadedType); setPagesData(loadedPages);
         setCurrentPage(1); 
