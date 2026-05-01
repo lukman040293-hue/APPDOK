@@ -731,6 +731,7 @@ const App = () => {
     } catch (err) { setIsPdfLoading(false); setStatusMsg({ text: 'Gagal proses', type: 'error' }); }
   };
 
+  // --- PERBAIKAN: IMPORT LIBRARY UNTUK PAGINASI PDF ---
   useEffect(() => {
     const loadScript = (src, id) => new Promise((resolve) => {
       if (document.getElementById(id)) return resolve();
@@ -740,12 +741,14 @@ const App = () => {
     });
     if(!isLibraryReady.pdf) {
       Promise.all([
-        loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js', 'lib-pdf'),
+        loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', 'lib-jspdf'),
+        loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', 'lib-h2c'),
         loadScript('https://cdn.jsdelivr.net/gh/gitbrent/PptxGenJS@3.12.0/dist/pptxgen.bundle.js', 'lib-ppt')
-      ]).then(() => setIsLibraryReady({ pdf: !!window.html2pdf, ppt: !!window.PptxGenJS }));
+      ]).then(() => setIsLibraryReady({ pdf: !!window.jspdf && !!window.html2canvas, ppt: !!window.PptxGenJS }));
     }
   }, [isLibraryReady.pdf]);
 
+  // --- PERBAIKAN: SISTEM RENDER PDF HALAMAN DEMI HALAMAN ---
   useEffect(() => {
     if (shouldTriggerDownload && bakedPages) {
       const generatePDF = async () => {
@@ -757,40 +760,65 @@ const App = () => {
         
         const cleanTitle = reportInfo.title.replace(/ /g, '_');
         
-        // --- OPTIMASI HTML2PDF (SMART PAGINATION) ---
-        const options = { 
-            margin: 0, 
-            filename: `${cleanTitle}.pdf`, 
-            image: { type: 'jpeg', quality: 0.85 }, 
-            pagebreak: { mode: ['css', 'legacy'] }, // Mode legacy memecah div lebih aman untuk memori
-            html2canvas: { 
-              scale: 1.5, // 1.5 optimal antara kualitas dan memori
-              useCORS: true, 
-              width: 794, 
-              windowWidth: 794, 
-              removeContainer: true // Membersihkan sisa elemen di memory (cegah blank putih)
-            }, 
-            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } 
-        };
+        // --- PERBAIKAN: Mengisolasi DOM agar tidak bentrok dengan React Re-render ---
+        const clonedContainer = document.createElement('div');
+        clonedContainer.style.position = 'absolute';
+        clonedContainer.style.top = '-10000px';
+        const clonedElement = element.cloneNode(true);
+        clonedContainer.appendChild(clonedElement);
+        document.body.appendChild(clonedContainer);
 
         try { 
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF('p', 'mm', 'a4');
+            const pagesElements = clonedElement.querySelectorAll('.report-page-final');
+
+            // Render setiap halaman satu per satu untuk mencegah crash memori HP
+            for (let i = 0; i < pagesElements.length; i++) {
+                setStatusMsg({ text: `Memproses ${i + 1}/${pagesElements.length}...`, type: 'info' });
+                
+                // Jeda agar state React (statusMsg) bisa terupdate tanpa merusak elemen html2canvas
+                await new Promise(r => setTimeout(r, 50));
+
+                const canvas = await window.html2canvas(pagesElements[i], {
+                    scale: 2.5, // Ditingkatkan ke kualitas TINGGI (Sangat tajam, cocok untuk zoom/print)
+                    useCORS: true,
+                    width: 794,
+                    windowWidth: 794,
+                    logging: false
+                });
+                
+                // Kualitas kompresi JPEG dimaksimalkan ke 98% agar artefak kompresi pada foto hilang
+                const imgData = canvas.toDataURL('image/jpeg', 0.98);
+                
+                if (i > 0) doc.addPage();
+                doc.addImage(imgData, 'JPEG', 0, 0, 210, 296.7);
+            }
+
             if (pdfAction === 'share') {
-                const pdfBlob = await window.html2pdf().set(options).from(element).output('blob');
+                setStatusMsg({ text: 'Menyiapkan File Share...', type: 'info' });
+                const pdfBlob = doc.output('blob');
                 const file = new File([pdfBlob], `${cleanTitle}.pdf`, { type: 'application/pdf' });
                 if (navigator.canShare && navigator.canShare({ files: [file] })) {
                     await navigator.share({ files: [file], title: reportInfo.title, text: 'Berikut adalah laporan dokumentasi lapangan.' });
                     setStatusMsg({ text: 'Berhasil dibagikan!', type: 'success' });
                 } else {
-                    await window.html2pdf().set(options).from(element).save();
+                    doc.save(`${cleanTitle}.pdf`);
+                    setStatusMsg({ text: 'Otomatis Mengunduh...', type: 'info' });
                 }
             } else {
-                await window.html2pdf().set(options).from(element).save(); 
+                setStatusMsg({ text: 'Mengunduh PDF...', type: 'info' });
+                doc.save(`${cleanTitle}.pdf`); 
                 setStatusMsg({ text: 'PDF Diunduh!', type: 'success' }); 
             }
         } catch (e) {
             if (e.name !== 'AbortError') console.error(e);
             setStatusMsg({ text: e.name === 'AbortError' ? 'Batal Dibagikan' : 'Dibatalkan / Selesai', type: 'info' });
         } finally { 
+            // Bersihkan DOM clone dari body
+            if (document.body.contains(clonedContainer)) {
+                document.body.removeChild(clonedContainer);
+            }
             setIsPdfLoading(false); setBakedPages(null); setShouldTriggerDownload(false); 
             setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000); 
         }
