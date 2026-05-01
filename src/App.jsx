@@ -9,6 +9,9 @@ import {
   BarChart3, PieChart, Users, Share2 
 } from 'lucide-react';
 
+// --- ID Sesi Unik Untuk Real-Time Sync Antar Perangkat ---
+const TAB_SESSION_ID = Math.random().toString(36).substring(2, 15);
+
 // --- MENCEGAH LOG ERROR KUOTA FIREBASE AGAR TIDAK MUNCUL DI LAYAR ---
 const originalConsoleError = console.error;
 console.error = (...args) => {
@@ -224,6 +227,7 @@ const App = () => {
   const [shouldTriggerDownload, setShouldTriggerDownload] = useState(false);
   
   const lastSavedHashRef = useRef({}); 
+  const latestDataRef = useRef({ reportInfo, pagesData, reportType }); // Ref untuk mencegah reset interval autosave
   const [isOfflineMode, setIsOfflineMode] = useState(false); 
   
   const [showClearModal, setShowClearModal] = useState(false);
@@ -239,6 +243,11 @@ const App = () => {
   const [newEmailAdmin, setNewEmailAdmin] = useState(false);
   const [previewZoom, setPreviewZoom] = useState(1);
   const [filterEmail, setFilterEmail] = useState('all'); 
+
+  // --- Merekam Data Terkini untuk Keperluan Autosave tanpa mereset timer ---
+  useEffect(() => {
+    latestDataRef.current = { reportInfo, pagesData, reportType };
+  }, [reportInfo, pagesData, reportType]);
 
   const currentAllowed = useMemo(() => Array.from(new Set([...DEFAULT_EMAIL_IZIN.map(e=>e.toLowerCase()), ...(accessData?.allowed || []).map(e=>e.toLowerCase())])), [accessData?.allowed]);
   const currentAdmins = useMemo(() => Array.from(new Set([...DEFAULT_ADMIN.map(e=>e.toLowerCase()), ...(accessData?.admins || []).map(e=>e.toLowerCase())])), [accessData?.admins]);
@@ -262,6 +271,22 @@ const App = () => {
     const hasMedia = [...(pagesObj.umum || []), ...(pagesObj.progres || [])].flat().some(p => p && (p.src !== null || (p.note && p.note.trim() !== '')));
     const hasLogo = !!(info.logos && info.logos.some(l => l !== null));
     return !hasText && !hasMeta && !hasMedia && !hasLogo;
+  };
+
+  // --- FUNGSI CERDAS: Cek apakah benar-benar ada data yang diedit ---
+  const checkHasChanges = (id, info, pagesObj) => {
+    if (!lastSavedHashRef.current.reportInfo) return true; // Belum pernah tersimpan di sesi ini
+    if (JSON.stringify(info) !== lastSavedHashRef.current.reportInfo) return true;
+    if (pagesObj.umum.length !== (lastSavedHashRef.current.umumLength || 0)) return true;
+    if (pagesObj.progres.length !== (lastSavedHashRef.current.progresLength || 0)) return true;
+
+    for (let i = 0; i < pagesObj.umum.length; i++) {
+        if (JSON.stringify(pagesObj.umum[i]) !== lastSavedHashRef.current[`${id}_umum_${i}`]) return true;
+    }
+    for (let i = 0; i < pagesObj.progres.length; i++) {
+        if (JSON.stringify(pagesObj.progres[i]) !== lastSavedHashRef.current[`${id}_progres_${i}`]) return true;
+    }
+    return false;
   };
 
   const uniqueAuthors = useMemo(() => {
@@ -390,6 +415,73 @@ const App = () => {
     return () => unsubscribe();
   }, [user, activeEmail, currentAdmins, isOfflineMode]);
 
+  // --- FITUR BARU: Real-Time Live Sync saat berada di dalam Editor Proyek ---
+  useEffect(() => {
+    if (!user || !activeProjectId || view === 'dashboard' || isOfflineMode || !db) return;
+
+    const projRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_projects', activeProjectId);
+    const unsubscribe = onSnapshot(projRef, async (snap) => {
+        if (!snap.exists()) {
+            // Jika proyek dihapus oleh Admin lain saat kita sedang melihatnya
+            setStatusMsg({ text: 'Proyek dihapus oleh orang lain.', type: 'error' });
+            setView('dashboard');
+            setActiveProjectId(null);
+            return;
+        }
+
+        const data = snap.data();
+        // Cek apakah proyek ini baru saja disimpan oleh perangkat/sesi lain
+        if (data.lastSavedBy && data.lastSavedBy !== TAB_SESSION_ID) {
+            setStatusMsg({ text: 'Menyinkronkan Kolaborasi...', type: 'info' });
+            
+            try {
+                let loadedInfo = data.reportInfo || defaultReportInfo;
+                if (!loadedInfo.customMeta) {
+                    loadedInfo = { ...loadedInfo, customMeta: [
+                        { id: 'm1', label: 'Pekerjaan', value: loadedInfo.project || '' },
+                        { id: 'm2', label: 'Instansi', value: loadedInfo.department || '' },
+                        { id: 'm3', label: 'Kontraktor', value: loadedInfo.contractor || '' },
+                        { id: 'm4', label: 'Konsultan', value: loadedInfo.consultant || '' }
+                    ]};
+                }
+
+                const umumPromises = []; const progresPromises = [];
+                for(let i=0; i < (data.pageCountUmum || 0); i++) umumPromises.push(getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${activeProjectId}_umum_page_${i}`)));
+                for(let i=0; i < (data.pageCountProgres || 0); i++) progresPromises.push(getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${activeProjectId}_progres_page_${i}`)));
+
+                const [umumSnaps, progresSnaps] = await Promise.all([Promise.all(umumPromises), Promise.all(progresPromises)]);
+                
+                let loadedUmum = []; let loadedProgres = [];
+                const initialHash = {};
+                umumSnaps.forEach(pSnap => { if(pSnap.exists()) { const pData = pSnap.data().data; loadedUmum.push(pData); initialHash[`${activeProjectId}_umum_${pSnap.data().index}`] = JSON.stringify(pData); }});
+                progresSnaps.forEach(pSnap => { if(pSnap.exists()) { const pData = pSnap.data().data; loadedProgres.push(pData); initialHash[`${activeProjectId}_progres_${pSnap.data().index}`] = JSON.stringify(pData); }});
+
+                // Perbarui Hash agar tidak bentrok
+                lastSavedHashRef.current = initialHash;
+                lastSavedHashRef.current.reportInfo = JSON.stringify(loadedInfo);
+                lastSavedHashRef.current.umumLength = loadedUmum.length;
+                lastSavedHashRef.current.progresLength = loadedProgres.length;
+
+                // Terapkan ke state layar
+                setReportInfo(loadedInfo);
+                setProjectAuthor(data.authorEmail || activeEmail);
+                setProjectTime(data.updatedAt || Date.now());
+                setPagesData({
+                    umum: loadedUmum.length > 0 ? loadedUmum : [createNewPage()],
+                    progres: loadedProgres.length > 0 ? loadedProgres : [createNewPage()]
+                });
+
+                setStatusMsg({ text: 'Tersinkronisasi Real-time!', type: 'success' });
+                setTimeout(() => setStatusMsg({ text: '', type: '' }), 2500);
+            } catch (e) {
+                console.error("Gagal Live Sync", e);
+            }
+        }
+    });
+
+    return () => unsubscribe();
+  }, [user, activeProjectId, view, isOfflineMode, activeEmail]);
+
   const handleLogin = async (e) => {
     e.preventDefault();
     const email = emailInput.trim().toLowerCase();
@@ -507,7 +599,7 @@ const App = () => {
   }, [view]);
 
   // =========================================================================
-  // FUNGSI PENYIMPANAN PARALEL CEPAT (JUJUR & ANTI-MACET)
+  // FUNGSI PENYIMPANAN PARALEL (Dengan Pencegah File Hantu & Sinkronisasi)
   // =========================================================================
   const saveToCloudNow = async (id, info, pagesObj, type, emailToSave, timeToSave) => {
     if (!user || !id) return Promise.resolve(false);
@@ -527,7 +619,8 @@ const App = () => {
         pageCountUmum: pagesObj.umum.length, 
         pageCountProgres: pagesObj.progres.length, 
         updatedAt: timeToSave || Date.now(), 
-        authorEmail: emailToSave 
+        authorEmail: emailToSave,
+        lastSavedBy: TAB_SESSION_ID // Tandai bahwa layar ini yang terakhir menyimpan
       });
 
       const isPageBlank = (pageData) => !pageData || pageData.every(p => !p.src && (!p.note || p.note.trim() === ''));
@@ -549,7 +642,10 @@ const App = () => {
              }
          }
       }
+      
+      // MENCEGAH FILE HANTU: Hapus memori hash halaman yang terbuang!
       for(let i = pagesObj.umum.length; i < 50; i++) {
+         delete lastSavedHashRef.current[`${id}_umum_${i}`];
          const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_umum_page_${i}`);
          deleteTasks.push(() => deleteDoc(pageRef).catch(()=>{}));
       }
@@ -568,7 +664,10 @@ const App = () => {
              }
          }
       }
+      
+      // MENCEGAH FILE HANTU: Hapus memori hash halaman yang terbuang!
       for(let i = pagesObj.progres.length; i < 50; i++) {
+         delete lastSavedHashRef.current[`${id}_progres_${i}`];
          const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_progres_page_${i}`);
          deleteTasks.push(() => deleteDoc(pageRef).catch(()=>{}));
       }
@@ -580,10 +679,13 @@ const App = () => {
         }
       };
 
-      // Kita WAJIB menunggu (await) proses ini selesai agar data tidak putus di jalan.
-      // Chunk diatur ke 10 agar stabil dan cepat untuk 50 halaman.
       await executeInChunks(uploadTasks, 10); 
       await executeInChunks(deleteTasks, 20);
+
+      // Mutakhirkan meta hash setelah semua berhasil
+      lastSavedHashRef.current.reportInfo = JSON.stringify(info);
+      lastSavedHashRef.current.umumLength = pagesObj.umum.length;
+      lastSavedHashRef.current.progresLength = pagesObj.progres.length;
 
       setSaveStatus('saved');
       return true;
@@ -596,25 +698,37 @@ const App = () => {
     }
   };
 
+  // --- SMART AUTOSAVE (15 Detik) ---
+  // Hanya akan menembak ke server JIKA BENAR-BENAR ADA PERUBAHAN
   useEffect(() => {
     if (!user || !activeProjectId || view === 'dashboard' || isOfflineMode) return;
     
     const interval = setInterval(() => {
-      if (!isProjectEmpty(reportInfo, pagesData)) {
-          const isOwner = activeEmail === projectAuthor;
-          saveToCloudNow(activeProjectId, reportInfo, pagesData, reportType, projectAuthor, isOwner ? Date.now() : projectTime);
+      const currentData = latestDataRef.current;
+      if (!isProjectEmpty(currentData.reportInfo, currentData.pagesData)) {
+          // Hanya autosave jika ada yang diketik/diubah, cegah penimpaan data admin!
+          if (checkHasChanges(activeProjectId, currentData.reportInfo, currentData.pagesData)) {
+              const isOwner = activeEmail === projectAuthor;
+              saveToCloudNow(activeProjectId, currentData.reportInfo, currentData.pagesData, currentData.reportType, projectAuthor, isOwner ? Date.now() : projectTime);
+          }
       }
-    }, 30000); 
+    }, 15000); 
 
     return () => clearInterval(interval);
-  }, [reportInfo, pagesData, reportType, activeProjectId, user, view, activeEmail, projectAuthor, projectTime, isOfflineMode]);
+  }, [activeProjectId, user, view, activeEmail, projectAuthor, projectTime, isOfflineMode]);
 
   const createNewProject = async () => {
     const newId = `proj_${Date.now()}`;
     const newInfo = {...defaultReportInfo, title: 'LAPORAN DOKUMENTASI LAPANGAN'};
     const newPages = { umum: [createNewPage()], progres: [createNewPage()] };
     const now = Date.now();
-    lastSavedHashRef.current = {}; 
+    
+    lastSavedHashRef.current = {
+        reportInfo: JSON.stringify(newInfo),
+        umumLength: 1,
+        progresLength: 1
+    }; 
+    
     setActiveProjectId(newId);
     setReportInfo(newInfo);
     setReportType('umum');
@@ -662,7 +776,13 @@ const App = () => {
       const initialHash = {};
       umumSnaps.forEach(pSnap => { if(pSnap.exists()) { const data = pSnap.data().data; loadedUmum.push(data); initialHash[`${project.id}_umum_${pSnap.data().index}`] = JSON.stringify(data); }});
       progresSnaps.forEach(pSnap => { if(pSnap.exists()) { const data = pSnap.data().data; loadedProgres.push(data); initialHash[`${project.id}_progres_${pSnap.data().index}`] = JSON.stringify(data); }});
+      
+      // Inisialisasi memori pembanding secara utuh!
       lastSavedHashRef.current = initialHash;
+      lastSavedHashRef.current.reportInfo = JSON.stringify(loadedInfo);
+      lastSavedHashRef.current.umumLength = loadedUmum.length;
+      lastSavedHashRef.current.progresLength = loadedProgres.length;
+
       setPagesData({ umum: loadedUmum.length > 0 ? loadedUmum : [createNewPage()], progres: loadedProgres.length > 0 ? loadedProgres : [createNewPage()] });
       setSaveStatus('saved');
       setStatusMsg({ text: '', type: '' });
@@ -748,10 +868,17 @@ const App = () => {
          setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
          return;
       }
+      
+      // Jika tidak ada perubahan sejak memori hash terakhir, jangan buang kuota!
+      if (!checkHasChanges(activeProjectId, reportInfo, pagesData)) {
+          setStatusMsg({ text: 'Sudah Tersimpan!', type: 'success' });
+          setTimeout(() => setStatusMsg({ text: '', type: '' }), 1500);
+          return;
+      }
+
       const isOwner = activeEmail === projectAuthor;
       setStatusMsg({ text: 'Menyinkronkan...', type: 'info' });
       
-      // Tunggu (await) sampai semua file terunggah
       const success = await saveToCloudNow(activeProjectId, reportInfo, pagesData, reportType, projectAuthor, isOwner ? Date.now() : projectTime);
       
       if (success) {
@@ -903,7 +1030,13 @@ const App = () => {
         const now = Date.now();
         setActiveProjectId(newId);
         let loadedInfo = data.reportInfo || defaultReportInfo;
-        lastSavedHashRef.current = {}; 
+        
+        lastSavedHashRef.current = {
+            reportInfo: JSON.stringify(loadedInfo),
+            umumLength: data.pagesData?.umum?.length || 0,
+            progresLength: data.pagesData?.progres?.length || 0
+        }; 
+        
         setReportInfo(loadedInfo); setReportType(data.reportType || 'umum'); setPagesData(data.pagesData);
         setCurrentPage(1); setProjectAuthor(activeEmail); setProjectTime(now); setView('edit');
         
@@ -931,9 +1064,11 @@ const App = () => {
       setStatusMsg({ text: 'Kembali ke Dashboard...', type: 'info' });
       if (activeProjectId && !isOfflineMode) {
         if (!isProjectEmpty(reportInfo, pagesData)) {
-            const isOwner = activeEmail === projectAuthor;
-            const timeToSave = isOwner ? Date.now() : projectTime;
-            saveToCloudNow(activeProjectId, reportInfo, pagesData, reportType, projectAuthor, timeToSave); 
+            if (checkHasChanges(activeProjectId, reportInfo, pagesData)) {
+                const isOwner = activeEmail === projectAuthor;
+                const timeToSave = isOwner ? Date.now() : projectTime;
+                saveToCloudNow(activeProjectId, reportInfo, pagesData, reportType, projectAuthor, timeToSave); 
+            }
         }
       }
       setView('dashboard'); setPagesData({ umum: [], progres: [] }); setBakedPages(null); setActiveProjectId(null); 
