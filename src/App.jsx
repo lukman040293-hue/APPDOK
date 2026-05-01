@@ -680,16 +680,25 @@ const App = () => {
     setShowDeleteProjectModal({ show: false, project: null });
     setStatusMsg({ text: 'Menghapus Proyek...', type: 'info' });
     try {
+      // Hapus data utama dulu agar langsung hilang dari Dashboard (Instant UI Feedback)
       await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_projects', proj.id));
       setStatusMsg({ text: 'Proyek Dihapus!', type: 'success' }); 
       
-      const deletePromises = [];
-      for (let i = 0; i < 50; i++) {
-        deletePromises.push(deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_page_${i}`)).catch(()=>{}));
-        deletePromises.push(deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_umum_page_${i}`)).catch(()=>{}));
-        deletePromises.push(deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_progres_page_${i}`)).catch(()=>{}));
-      }
-      Promise.all(deletePromises);
+      // Penghapusan siluman bertahap (Chunking) agar jaringan browser tidak macet
+      const backgroundDelete = async () => {
+          const deleteTasks = [];
+          for (let i = 0; i < 50; i++) {
+            deleteTasks.push(() => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_page_${i}`)).catch(()=>{}));
+            deleteTasks.push(() => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_umum_page_${i}`)).catch(()=>{}));
+            deleteTasks.push(() => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_progres_page_${i}`)).catch(()=>{}));
+          }
+          // Eksekusi hapus 20 file saja dalam satu waktu, lalu lanjut lagi (Mencegah Lag)
+          for (let i = 0; i < deleteTasks.length; i += 20) {
+              await Promise.all(deleteTasks.slice(i, i + 20).map(task => task()));
+          }
+      };
+      
+      backgroundDelete(); // Fire-and-forget: jalankan tanpa menyuruh aplikasi menunggu
     } catch (e) { 
       setStatusMsg({ text: 'Gagal menghapus', type: 'error' }); 
     }
