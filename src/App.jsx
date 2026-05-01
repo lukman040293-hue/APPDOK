@@ -520,7 +520,7 @@ const App = () => {
     try {
       setSaveStatus('saving');
       
-      // 1. Simpan Info Proyek Utama
+      // 1. Simpan Info Proyek Utama (Sangat Cepat karena hanya teks)
       const projRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_projects', id);
       await setDoc(projRef, { 
         reportInfo: info, 
@@ -531,53 +531,74 @@ const App = () => {
         authorEmail: emailToSave 
       });
 
-      // 2. Kumpulkan Semua Tugas (Halaman yang berubah / harus dihapus)
-      const uploadTasks = [];
-      const deleteTasks = [];
+      // Fungsi Cerdas: Deteksi halaman yang kosong melompong (tidak ada foto/catatan)
+      const isPageBlank = (pageData) => !pageData || pageData.every(p => !p.src && (!p.note || p.note.trim() === ''));
 
-      for (let i = 0; i < pagesObj.umum.length; i++) {
-         const currentStr = JSON.stringify(pagesObj.umum[i]);
-         if (lastSavedHashRef.current[`${id}_umum_${i}`] !== currentStr) {
-             const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_umum_page_${i}`);
-             uploadTasks.push(() => setDoc(pageRef, { index: i, projectId: id, type: 'umum', data: pagesObj.umum[i] }).then(() => {
-                 lastSavedHashRef.current[`${id}_umum_${i}`] = currentStr;
-             }));
-         }
-      }
-      for(let i = pagesObj.umum.length; i < 50; i++) {
-         const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_umum_page_${i}`);
-         deleteTasks.push(() => deleteDoc(pageRef).catch(()=>{}));
-      }
+      // 2. Kumpulkan Semua Tugas & Lakukan di Latar Belakang (Siluman)
+      const runBackgroundTasks = async () => {
+        const uploadTasks = [];
+        const deleteTasks = [];
 
-      for (let i = 0; i < pagesObj.progres.length; i++) {
-         const currentStr = JSON.stringify(pagesObj.progres[i]);
-         if (lastSavedHashRef.current[`${id}_progres_${i}`] !== currentStr) {
-             const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_progres_page_${i}`);
-             uploadTasks.push(() => setDoc(pageRef, { index: i, projectId: id, type: 'progres', data: pagesObj.progres[i] }).then(() => {
-                 lastSavedHashRef.current[`${id}_progres_${i}`] = currentStr;
-             }));
-         }
-      }
-      for(let i = pagesObj.progres.length; i < 50; i++) {
-         const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_progres_page_${i}`);
-         deleteTasks.push(() => deleteDoc(pageRef).catch(()=>{}));
-      }
-      
-      // 3. Eksekusi secara Paralel dalam Kelompok (Chunking)
-      // Ini mencegah Crash Limit 10MB dari Firebase jika upload 50 Halaman sekaligus
-      const executeInChunks = async (tasks, chunkSize) => {
-        for (let i = 0; i < tasks.length; i += chunkSize) {
-          const chunk = tasks.slice(i, i + chunkSize);
-          await Promise.all(chunk.map(task => task()));
+        for (let i = 0; i < pagesObj.umum.length; i++) {
+           const currentStr = JSON.stringify(pagesObj.umum[i]);
+           if (lastSavedHashRef.current[`${id}_umum_${i}`] !== currentStr) {
+               const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_umum_page_${i}`);
+               if (isPageBlank(pagesObj.umum[i])) {
+                   // Jika halaman kosong, hapus dari cloud, hemat kuota
+                   deleteTasks.push(() => deleteDoc(pageRef).catch(()=>{}));
+                   lastSavedHashRef.current[`${id}_umum_${i}`] = currentStr;
+               } else {
+                   uploadTasks.push(() => setDoc(pageRef, { index: i, projectId: id, type: 'umum', data: pagesObj.umum[i] }).then(() => {
+                       lastSavedHashRef.current[`${id}_umum_${i}`] = currentStr;
+                   }));
+               }
+           }
         }
+        for(let i = pagesObj.umum.length; i < 50; i++) {
+           const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_umum_page_${i}`);
+           deleteTasks.push(() => deleteDoc(pageRef).catch(()=>{}));
+        }
+
+        for (let i = 0; i < pagesObj.progres.length; i++) {
+           const currentStr = JSON.stringify(pagesObj.progres[i]);
+           if (lastSavedHashRef.current[`${id}_progres_${i}`] !== currentStr) {
+               const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_progres_page_${i}`);
+               if (isPageBlank(pagesObj.progres[i])) {
+                   deleteTasks.push(() => deleteDoc(pageRef).catch(()=>{}));
+                   lastSavedHashRef.current[`${id}_progres_${i}`] = currentStr;
+               } else {
+                   uploadTasks.push(() => setDoc(pageRef, { index: i, projectId: id, type: 'progres', data: pagesObj.progres[i] }).then(() => {
+                       lastSavedHashRef.current[`${id}_progres_${i}`] = currentStr;
+                   }));
+               }
+           }
+        }
+        for(let i = pagesObj.progres.length; i < 50; i++) {
+           const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_progres_page_${i}`);
+           deleteTasks.push(() => deleteDoc(pageRef).catch(()=>{}));
+        }
+        
+        const executeInChunks = async (tasks, chunkSize) => {
+          for (let i = 0; i < tasks.length; i += chunkSize) {
+            const chunk = tasks.slice(i, i + chunkSize);
+            await Promise.all(chunk.map(task => task()));
+          }
+        };
+
+        // Tembak sekaligus lebih banyak (Karena halaman kosong sudah dibuang, ini akan sangat cepat)
+        await executeInChunks(uploadTasks, 20); 
+        await executeInChunks(deleteTasks, 30);
       };
 
-      // Tembak upload 5 halaman sekaligus secara paralel agar super ngebut dan stabil
-      await executeInChunks(uploadTasks, 5); 
-      // Eksekusi penghapusan halaman kosong dengan lebih cepat
-      await executeInChunks(deleteTasks, 20);
+      // Jalankan proses unggah di latar belakang tanpa menyuruh aplikasi menunggu
+      runBackgroundTasks().then(() => {
+        setSaveStatus('saved');
+      }).catch((e) => {
+        if (e.code === 'resource-exhausted' || (e.message && e.message.includes('Quota'))) triggerOfflineMode();
+        setSaveStatus('error');
+      });
 
-      setSaveStatus('saved');
+      // Langsung kembalikan respons "SUKSES" secara instan ke layar pengguna!
       return true;
     } catch (error) { 
       setSaveStatus('error'); 
@@ -728,10 +749,12 @@ const App = () => {
          return;
       }
       const isOwner = activeEmail === projectAuthor;
-      setStatusMsg({ text: 'Menyimpan ke Cloud...', type: 'info' });
-      const success = await saveToCloudNow(activeProjectId, reportInfo, pagesData, reportType, projectAuthor, isOwner ? Date.now() : projectTime);
-      if (success) setStatusMsg({ text: 'Tersimpan di Cloud!', type: 'success' });
-      setTimeout(() => setStatusMsg({ text: '', type: '' }), 3000);
+      setStatusMsg({ text: 'Menyinkronkan...', type: 'info' });
+      saveToCloudNow(activeProjectId, reportInfo, pagesData, reportType, projectAuthor, isOwner ? Date.now() : projectTime);
+      
+      // Langsung memunculkan notifikasi sukses agar interaksi terasa sangat responsif dan instan
+      setTimeout(() => setStatusMsg({ text: 'Tersimpan!', type: 'success' }), 500);
+      setTimeout(() => setStatusMsg({ text: '', type: '' }), 2500);
     }
   };
 
@@ -865,6 +888,7 @@ const App = () => {
 
   const loadMentahan = (e) => {
     const file = e.target.files?.[0]; if (!file) return;
+    setStatusMsg({ text: 'Membaca File...', type: 'info' });
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
@@ -877,10 +901,14 @@ const App = () => {
         lastSavedHashRef.current = {}; 
         setReportInfo(loadedInfo); setReportType(data.reportType || 'umum'); setPagesData(data.pagesData);
         setCurrentPage(1); setProjectAuthor(activeEmail); setProjectTime(now); setView('edit');
+        
+        setStatusMsg({ text: 'Selesai!', type: 'success' });
+        setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
+        
         if (user && !isOfflineMode && !isProjectEmpty(loadedInfo, data.pagesData)) {
             saveToCloudNow(newId, loadedInfo, data.pagesData, data.reportType || 'umum', activeEmail, now);
         }
-      } catch { setStatusMsg({ text: 'File rusak', type: 'error' }); }
+      } catch { setStatusMsg({ text: 'File rusak', type: 'error' }); setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000); }
     };
     reader.readAsText(file); e.target.value = '';
   };
