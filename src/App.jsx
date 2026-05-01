@@ -654,14 +654,21 @@ const App = () => {
     setShowDeleteProjectModal({ show: false, project: null });
     setStatusMsg({ text: 'Menghapus Proyek...', type: 'info' });
     try {
+      // Hapus data utama dulu agar langsung hilang dari Dashboard (Instant UI Feedback)
       await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_projects', proj.id));
-      for (let i = 0; i < 50; i++) {
-        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_page_${i}`)).catch(()=>{});
-        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_umum_page_${i}`)).catch(()=>{});
-        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_progres_page_${i}`)).catch(()=>{});
-      }
       setStatusMsg({ text: 'Proyek Dihapus!', type: 'success' }); 
-    } catch (e) { setStatusMsg({ text: 'Gagal menghapus', type: 'error' }); }
+      
+      // Lakukan penghapusan halaman-halamannya di latar belakang (background) secara paralel
+      const deletePromises = [];
+      for (let i = 0; i < 50; i++) {
+        deletePromises.push(deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_page_${i}`)).catch(()=>{}));
+        deletePromises.push(deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_umum_page_${i}`)).catch(()=>{}));
+        deletePromises.push(deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_progres_page_${i}`)).catch(()=>{}));
+      }
+      Promise.all(deletePromises); // Fire-and-forget: tidak perlu di-await agar tidak loading lama
+    } catch (e) { 
+      setStatusMsg({ text: 'Gagal menghapus', type: 'error' }); 
+    }
     setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
   };
 
