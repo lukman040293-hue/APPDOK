@@ -422,7 +422,6 @@ const App = () => {
     const projRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_projects', activeProjectId);
     const unsubscribe = onSnapshot(projRef, async (snap) => {
         if (!snap.exists()) {
-            // Jika proyek dihapus oleh Admin lain saat kita sedang melihatnya
             setStatusMsg({ text: 'Proyek dihapus oleh orang lain.', type: 'error' });
             setView('dashboard');
             setActiveProjectId(null);
@@ -453,8 +452,31 @@ const App = () => {
                 
                 let loadedUmum = []; let loadedProgres = [];
                 const initialHash = {};
-                umumSnaps.forEach(pSnap => { if(pSnap.exists()) { const pData = pSnap.data().data; loadedUmum.push(pData); initialHash[`${activeProjectId}_umum_${pSnap.data().index}`] = JSON.stringify(pData); }});
-                progresSnaps.forEach(pSnap => { if(pSnap.exists()) { const pData = pSnap.data().data; loadedProgres.push(pData); initialHash[`${activeProjectId}_progres_${pSnap.data().index}`] = JSON.stringify(pData); }});
+                
+                // PENCEGAH SHIFTING: Pastikan panjang array tetap akurat meski ada dokumen kosong
+                umumSnaps.forEach((pSnap, idx) => { 
+                    if(pSnap.exists()) { 
+                        const pData = pSnap.data().data; 
+                        loadedUmum.push(pData); 
+                        initialHash[`${activeProjectId}_umum_${idx}`] = JSON.stringify(pData); 
+                    } else {
+                        const blankPage = createNewPage();
+                        loadedUmum.push(blankPage);
+                        initialHash[`${activeProjectId}_umum_${idx}`] = JSON.stringify(blankPage);
+                    }
+                });
+                
+                progresSnaps.forEach((pSnap, idx) => { 
+                    if(pSnap.exists()) { 
+                        const pData = pSnap.data().data; 
+                        loadedProgres.push(pData); 
+                        initialHash[`${activeProjectId}_progres_${idx}`] = JSON.stringify(pData); 
+                    } else {
+                        const blankPage = createNewPage();
+                        loadedProgres.push(blankPage);
+                        initialHash[`${activeProjectId}_progres_${idx}`] = JSON.stringify(blankPage);
+                    }
+                });
 
                 // Perbarui Hash agar tidak bentrok
                 lastSavedHashRef.current = initialHash;
@@ -599,7 +621,7 @@ const App = () => {
   }, [view]);
 
   // =========================================================================
-  // FUNGSI PENYIMPANAN PARALEL (Dengan Pencegah File Hantu & Sinkronisasi)
+  // FUNGSI PENYIMPANAN PARALEL (Diperbaiki dari Masalah Race Condition)
   // =========================================================================
   const saveToCloudNow = async (id, info, pagesObj, type, emailToSave, timeToSave) => {
     if (!user || !id) return Promise.resolve(false);
@@ -612,22 +634,12 @@ const App = () => {
     try {
       setSaveStatus('saving');
       
-      const projRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_projects', id);
-      await setDoc(projRef, { 
-        reportInfo: info, 
-        lastActiveTab: type, 
-        pageCountUmum: pagesObj.umum.length, 
-        pageCountProgres: pagesObj.progres.length, 
-        updatedAt: timeToSave || Date.now(), 
-        authorEmail: emailToSave,
-        lastSavedBy: TAB_SESSION_ID // Tandai bahwa layar ini yang terakhir menyimpan
-      });
-
       const isPageBlank = (pageData) => !pageData || pageData.every(p => !p.src && (!p.note || p.note.trim() === ''));
 
       const uploadTasks = [];
       const deleteTasks = [];
 
+      // 1. SIAPKAN TUGAS UNTUK MENGUNGGAH / MENGHAPUS HALAMAN
       for (let i = 0; i < pagesObj.umum.length; i++) {
          const currentStr = JSON.stringify(pagesObj.umum[i]);
          if (lastSavedHashRef.current[`${id}_umum_${i}`] !== currentStr) {
@@ -643,9 +655,11 @@ const App = () => {
          }
       }
       
-      // MENCEGAH FILE HANTU: Hapus memori hash halaman yang terbuang!
+      // Bersihkan sisa halaman yang dihapus
       for(let i = pagesObj.umum.length; i < 50; i++) {
-         delete lastSavedHashRef.current[`${id}_umum_${i}`];
+         if (lastSavedHashRef.current[`${id}_umum_${i}`]) {
+            delete lastSavedHashRef.current[`${id}_umum_${i}`];
+         }
          const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_umum_page_${i}`);
          deleteTasks.push(() => deleteDoc(pageRef).catch(()=>{}));
       }
@@ -665,9 +679,11 @@ const App = () => {
          }
       }
       
-      // MENCEGAH FILE HANTU: Hapus memori hash halaman yang terbuang!
+      // Bersihkan sisa halaman progres yang dihapus
       for(let i = pagesObj.progres.length; i < 50; i++) {
-         delete lastSavedHashRef.current[`${id}_progres_${i}`];
+         if (lastSavedHashRef.current[`${id}_progres_${i}`]) {
+            delete lastSavedHashRef.current[`${id}_progres_${i}`];
+         }
          const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_progres_page_${i}`);
          deleteTasks.push(() => deleteDoc(pageRef).catch(()=>{}));
       }
@@ -679,8 +695,21 @@ const App = () => {
         }
       };
 
+      // 2. JALANKAN TUGAS HALAMAN TERLEBIH DAHULU (PENTING! Cegah Race Condition)
       await executeInChunks(uploadTasks, 10); 
       await executeInChunks(deleteTasks, 20);
+
+      // 3. BARU PERBARUI DOKUMEN PROYEK (Ini akan mentrigger perangkat lain untuk sinkron)
+      const projRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_projects', id);
+      await setDoc(projRef, { 
+        reportInfo: info, 
+        lastActiveTab: type, 
+        pageCountUmum: pagesObj.umum.length, 
+        pageCountProgres: pagesObj.progres.length, 
+        updatedAt: timeToSave || Date.now(), 
+        authorEmail: emailToSave,
+        lastSavedBy: TAB_SESSION_ID // Tandai bahwa layar ini yang terakhir menyimpan
+      });
 
       // Mutakhirkan meta hash setelah semua berhasil
       lastSavedHashRef.current.reportInfo = JSON.stringify(info);
@@ -706,7 +735,6 @@ const App = () => {
     const interval = setInterval(() => {
       const currentData = latestDataRef.current;
       if (!isProjectEmpty(currentData.reportInfo, currentData.pagesData)) {
-          // Hanya autosave jika ada yang diketik/diubah, cegah penimpaan data admin!
           if (checkHasChanges(activeProjectId, currentData.reportInfo, currentData.pagesData)) {
               const isOwner = activeEmail === projectAuthor;
               saveToCloudNow(activeProjectId, currentData.reportInfo, currentData.pagesData, currentData.reportType, projectAuthor, isOwner ? Date.now() : projectTime);
@@ -774,8 +802,30 @@ const App = () => {
       for(let i=0; i < (freshProjectData.pageCountProgres || 0); i++) progresPromises.push(getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${project.id}_progres_page_${i}`)));
       const [umumSnaps, progresSnaps] = await Promise.all([Promise.all(umumPromises), Promise.all(progresPromises)]);
       const initialHash = {};
-      umumSnaps.forEach(pSnap => { if(pSnap.exists()) { const data = pSnap.data().data; loadedUmum.push(data); initialHash[`${project.id}_umum_${pSnap.data().index}`] = JSON.stringify(data); }});
-      progresSnaps.forEach(pSnap => { if(pSnap.exists()) { const data = pSnap.data().data; loadedProgres.push(data); initialHash[`${project.id}_progres_${pSnap.data().index}`] = JSON.stringify(data); }});
+
+      // PENCEGAH SHIFTING: Ganti halaman yang dihapus (kosong) dengan kerangka kosong
+      umumSnaps.forEach((pSnap, idx) => { 
+          if(pSnap.exists()) { 
+              const data = pSnap.data().data; 
+              loadedUmum.push(data); 
+              initialHash[`${project.id}_umum_${idx}`] = JSON.stringify(data); 
+          } else {
+              const blankPage = createNewPage();
+              loadedUmum.push(blankPage);
+              initialHash[`${project.id}_umum_${idx}`] = JSON.stringify(blankPage);
+          }
+      });
+      progresSnaps.forEach((pSnap, idx) => { 
+          if(pSnap.exists()) { 
+              const data = pSnap.data().data; 
+              loadedProgres.push(data); 
+              initialHash[`${project.id}_progres_${idx}`] = JSON.stringify(data); 
+          } else {
+              const blankPage = createNewPage();
+              loadedProgres.push(blankPage);
+              initialHash[`${project.id}_progres_${idx}`] = JSON.stringify(blankPage);
+          }
+      });
       
       // Inisialisasi memori pembanding secara utuh!
       lastSavedHashRef.current = initialHash;
@@ -799,28 +849,20 @@ const App = () => {
     const proj = showDeleteProjectModal.project;
     setShowDeleteProjectModal({ show: false, project: null });
     
-    // --- 1. INSTAN: Langsung berikan feedback sukses ke user tanpa menunggu server ---
     setStatusMsg({ text: 'Proyek Dihapus!', type: 'success' }); 
     setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
 
-    // --- 2. BACKGROUND: Lakukan semua penghapusan secara mandiri tanpa menyandera aplikasi ---
     const backgroundDelete = async () => {
         try {
-            // Hapus dokumen utama
             await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_projects', proj.id));
-            
-            // Kumpulkan daftar halaman yang harus dihapus
             const deleteTasks = [];
             for (let i = 0; i < 50; i++) {
                 deleteTasks.push(() => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_page_${i}`)).catch(()=>{}));
                 deleteTasks.push(() => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_umum_page_${i}`)).catch(()=>{}));
                 deleteTasks.push(() => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_progres_page_${i}`)).catch(()=>{}));
             }
-            
-            // Hapus halaman sedikit demi sedikit sambil memberi napas untuk browser
             for (let i = 0; i < deleteTasks.length; i += 20) {
                 await Promise.all(deleteTasks.slice(i, i + 20).map(task => task()));
-                // Jeda 50ms agar HP pengguna tidak freeze
                 await new Promise(resolve => setTimeout(resolve, 50));
             }
         } catch (e) {
@@ -828,7 +870,7 @@ const App = () => {
         }
     };
     
-    backgroundDelete(); // Panggil dan lupakan (Fire-and-forget)
+    backgroundDelete(); 
   };
 
   useEffect(() => {
