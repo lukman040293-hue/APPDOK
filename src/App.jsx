@@ -674,35 +674,41 @@ const App = () => {
     }
   };
 
-  const executeDeleteProject = async () => {
+  const executeDeleteProject = () => {
     if (!user || !showDeleteProjectModal.project || isOfflineMode || !db) return;
     const proj = showDeleteProjectModal.project;
     setShowDeleteProjectModal({ show: false, project: null });
-    setStatusMsg({ text: 'Menghapus Proyek...', type: 'info' });
-    try {
-      // Hapus data utama dulu agar langsung hilang dari Dashboard (Instant UI Feedback)
-      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_projects', proj.id));
-      setStatusMsg({ text: 'Proyek Dihapus!', type: 'success' }); 
-      
-      // Penghapusan siluman bertahap (Chunking) agar jaringan browser tidak macet
-      const backgroundDelete = async () => {
-          const deleteTasks = [];
-          for (let i = 0; i < 50; i++) {
-            deleteTasks.push(() => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_page_${i}`)).catch(()=>{}));
-            deleteTasks.push(() => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_umum_page_${i}`)).catch(()=>{}));
-            deleteTasks.push(() => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_progres_page_${i}`)).catch(()=>{}));
-          }
-          // Eksekusi hapus 20 file saja dalam satu waktu, lalu lanjut lagi (Mencegah Lag)
-          for (let i = 0; i < deleteTasks.length; i += 20) {
-              await Promise.all(deleteTasks.slice(i, i + 20).map(task => task()));
-          }
-      };
-      
-      backgroundDelete(); // Fire-and-forget: jalankan tanpa menyuruh aplikasi menunggu
-    } catch (e) { 
-      setStatusMsg({ text: 'Gagal menghapus', type: 'error' }); 
-    }
+    
+    // --- 1. INSTAN: Langsung berikan feedback sukses ke user tanpa menunggu server ---
+    setStatusMsg({ text: 'Proyek Dihapus!', type: 'success' }); 
     setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
+
+    // --- 2. BACKGROUND: Lakukan semua penghapusan secara mandiri tanpa menyandera aplikasi ---
+    const backgroundDelete = async () => {
+        try {
+            // Hapus dokumen utama
+            await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_projects', proj.id));
+            
+            // Kumpulkan daftar halaman yang harus dihapus
+            const deleteTasks = [];
+            for (let i = 0; i < 50; i++) {
+                deleteTasks.push(() => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_page_${i}`)).catch(()=>{}));
+                deleteTasks.push(() => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_umum_page_${i}`)).catch(()=>{}));
+                deleteTasks.push(() => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_progres_page_${i}`)).catch(()=>{}));
+            }
+            
+            // Hapus halaman sedikit demi sedikit sambil memberi napas untuk browser
+            for (let i = 0; i < deleteTasks.length; i += 20) {
+                await Promise.all(deleteTasks.slice(i, i + 20).map(task => task()));
+                // Jeda 50ms agar HP pengguna tidak freeze
+                await new Promise(resolve => setTimeout(resolve, 50));
+            }
+        } catch (e) {
+            console.error("Penghapusan latar belakang selesai dengan peringatan:", e);
+        }
+    };
+    
+    backgroundDelete(); // Panggil dan lupakan (Fire-and-forget)
   };
 
   useEffect(() => {
