@@ -12,7 +12,6 @@ console.error = (...args) => {
       return String(a);
     }).join(' ');
     
-    // Jika mengandung kata kunci error kuota, sembunyikan sepenuhnya
     if (combined.includes('resource-exhausted') || 
         combined.includes('Quota') || 
         combined.includes('quota') ||
@@ -25,8 +24,8 @@ console.error = (...args) => {
 
 // --- FIREBASE IMPORTS ---
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, getDoc, collection, getDocs, deleteDoc, onSnapshot, writeBatch } from 'firebase/firestore';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, doc, setDoc, getDoc, collection, getDocs, deleteDoc, onSnapshot, writeBatch, terminate } from 'firebase/firestore';
 
 // --- INISIALISASI FIREBASE ---
 const firebaseConfig = {
@@ -46,15 +45,13 @@ try {
   db = getFirestore(app);
   appId = firebaseConfig.projectId;
 } catch (e) {
-  // Biarkan error inisialisasi awal tidak teredam agar bisa terdeteksi jika ada bug lain
   originalConsoleError("Gagal inisialisasi Firebase", e);
 }
 
-// --- AKSES DEFAULT (KODE BAWAAN) ---
 const DEFAULT_EMAIL_IZIN = ['at.file2020@gmail.com', 'admin@gmail.com'];
 const DEFAULT_ADMIN = ['admin@gmail.com', 'at.file2020@gmail.com'];
 
-const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleFileUpload, showToast }) => {
+const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleFileUpload }) => {
   const [tab, setTab] = useState('filter');
   const { zoom = 100, panX = 50, panY = 50, brightness = 100, saturation = 100, progress = 0 } = p;
 
@@ -77,11 +74,11 @@ const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleF
           <div className="flex flex-col gap-3 w-full px-6 sm:px-10 text-center">
             <label className={`w-full text-white py-3 sm:py-4 rounded-2xl sm:rounded-3xl text-[10px] font-black uppercase cursor-pointer flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all ${reportType === 'progres' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-blue-600 hover:bg-blue-500'}`}>
               <Camera size={18} className="sm:w-5 sm:h-5"/> AMBIL KAMERA
-              <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFileUpload} />
+              <input type="file" accept="image/jpeg, image/png, image/webp" capture="environment" className="hidden" onChange={handleFileUpload} />
             </label>
             <label className="w-full cursor-pointer bg-slate-100 text-slate-500 py-3 sm:py-3.5 rounded-2xl sm:rounded-3xl text-[10px] font-black uppercase flex items-center justify-center gap-2 active:scale-95 hover:bg-slate-200 transition-all">
               <ImageIcon size={16} className="sm:w-4 sm:h-4"/> PILIH GALERI
-              <input type="file" accept="image/*" className="hidden" onChange={handleFileUpload} />
+              <input type="file" accept="image/jpeg, image/png, image/webp" className="hidden" onChange={handleFileUpload} />
             </label>
           </div>
         )}
@@ -188,7 +185,6 @@ const App = () => {
     ]
   };
 
-  // --- STATE UTAMA ---
   const [activeEmail, setActiveEmail] = useState(null); 
   const [emailInput, setEmailInput] = useState('');
   const [loginError, setLoginError] = useState('');
@@ -220,9 +216,8 @@ const App = () => {
   const [shouldTriggerDownload, setShouldTriggerDownload] = useState(false);
   
   const lastSavedHashRef = useRef({}); 
-  const [isOfflineMode, setIsOfflineMode] = useState(false); // FLAG MODE LOKAL
+  const [isOfflineMode, setIsOfflineMode] = useState(false); 
   
-  // MODAL STATES
   const [showClearModal, setShowClearModal] = useState(false);
   const [showDeleteProjectModal, setShowDeleteProjectModal] = useState({ show: false, project: null });
   const [showReminderModal, setShowReminderModal] = useState(false); 
@@ -244,6 +239,7 @@ const App = () => {
   const triggerOfflineMode = () => {
     setIsOfflineMode(prev => {
         if (!prev) {
+            if (db) terminate(db).catch(() => {});
             setStatusMsg({ text: 'KUOTA PENUH! Mode Lokal Aktif.', type: 'error' });
             setTimeout(() => setStatusMsg({ text: '', type: '' }), 4000);
             return true;
@@ -252,7 +248,15 @@ const App = () => {
     });
   };
 
-  // Menarik daftar pembuat laporan yang unik untuk dropdown filter
+  const isProjectEmpty = (info, pagesObj) => {
+    if (!info || !pagesObj) return true;
+    const hasText = !!(info.project || info.department || info.contractor || info.consultant || (info.title && info.title !== 'LAPORAN DOKUMENTASI LAPANGAN'));
+    const hasMeta = !!(info.customMeta && info.customMeta.some(m => m.value && m.value.trim() !== ''));
+    const hasMedia = [...(pagesObj.umum || []), ...(pagesObj.progres || [])].flat().some(p => p && (p.src !== null || (p.note && p.note.trim() !== '')));
+    const hasLogo = !!(info.logos && info.logos.some(l => l !== null));
+    return !hasText && !hasMeta && !hasMedia && !hasLogo;
+  };
+
   const uniqueAuthors = useMemo(() => {
     const authors = new Set();
     projects.forEach(p => {
@@ -261,20 +265,15 @@ const App = () => {
     return Array.from(authors);
   }, [projects]);
 
-  // Daftar proyek yang sudah difilter
   const filteredProjects = useMemo(() => {
     if (!isAdmin || filterEmail === 'all') return projects;
     return projects.filter(p => p.authorEmail === filterEmail);
   }, [projects, filterEmail, isAdmin]);
 
-  // --- PENGATURAN NAMA TAB BROWSER ---
   useEffect(() => {
     document.title = "Aplikasi Dokumentasi"; 
   }, []);
 
-  // =========================================================================
-  // PELINDUNG TAB BROWSER SAAT PROSES PENYIMPANAN BERAT BERJALAN
-  // =========================================================================
   useEffect(() => {
     const handleBeforeUnload = (e) => {
       if (saveStatus === 'saving') {
@@ -347,7 +346,6 @@ const App = () => {
     return () => unsubscribe();
   }, [user, isOfflineMode]);
 
-  // SINKRONISASI LATAR BELAKANG
   useEffect(() => {
     if (!user || !activeEmail || isOfflineMode || !db) return;
     
@@ -490,19 +488,18 @@ const App = () => {
   }, [view]);
 
   // =========================================================================
-  // FUNGSI BATCH WRITE SUPER CEPAT 
+  // FUNGSI BATCH WRITE DENGAN DIRTY CHECKING (SUPER HEMAT KUOTA)
   // =========================================================================
   const saveToCloudNow = async (id, info, pagesObj, type, emailToSave, timeToSave) => {
     if (!user || !id) return Promise.resolve(false);
-    if (isOfflineMode || !db) {
-      setStatusMsg({ text: 'MODE LOKAL. SIMPAN KE MENTAHAN!', type: 'error' });
-      setTimeout(() => setStatusMsg({ text: '', type: '' }), 3000);
-      return Promise.resolve(false);
+    if (isOfflineMode || !db) return Promise.resolve(false);
+    
+    if (isProjectEmpty(info, pagesObj)) {
+        return Promise.resolve(false); 
     }
     
     try {
       setSaveStatus('saving');
-      
       const batch = writeBatch(db);
       
       const projRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_projects', id);
@@ -515,13 +512,15 @@ const App = () => {
         authorEmail: emailToSave 
       });
 
-      // FITUR BARU: Deteksi Perubahan Data (Dirty Checking)
+      let hasChanges = false;
+
       for (let i = 0; i < pagesObj.umum.length; i++) {
          const currentStr = JSON.stringify(pagesObj.umum[i]);
          if (lastSavedHashRef.current[`${id}_umum_${i}`] !== currentStr) {
              const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_umum_page_${i}`);
              batch.set(pageRef, { index: i, projectId: id, type: 'umum', data: pagesObj.umum[i] });
              lastSavedHashRef.current[`${id}_umum_${i}`] = currentStr;
+             hasChanges = true;
          }
       }
       for(let i = pagesObj.umum.length; i < 50; i++) {
@@ -535,6 +534,7 @@ const App = () => {
              const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_progres_page_${i}`);
              batch.set(pageRef, { index: i, projectId: id, type: 'progres', data: pagesObj.progres[i] });
              lastSavedHashRef.current[`${id}_progres_${i}`] = currentStr;
+             hasChanges = true;
          }
       }
       for(let i = pagesObj.progres.length; i < 50; i++) {
@@ -543,7 +543,6 @@ const App = () => {
       }
       
       await batch.commit();
-      
       setSaveStatus('saved');
       return true;
     } catch (error) { 
@@ -555,14 +554,26 @@ const App = () => {
     }
   };
 
+  // --- HYBRID AUTO-SAVE (SINKRONISASI PINTAR) ---
+  useEffect(() => {
+    if (!user || !activeProjectId || view === 'dashboard' || isOfflineMode) return;
+    
+    const interval = setInterval(() => {
+      if (!isProjectEmpty(reportInfo, pagesData)) {
+          const isOwner = activeEmail === projectAuthor;
+          saveToCloudNow(activeProjectId, reportInfo, pagesData, reportType, projectAuthor, isOwner ? Date.now() : projectTime);
+      }
+    }, 30000); 
+
+    return () => clearInterval(interval);
+  }, [reportInfo, pagesData, reportType, activeProjectId, user, view, activeEmail, projectAuthor, projectTime, isOfflineMode]);
+
   const createNewProject = async () => {
     const newId = `proj_${Date.now()}`;
     const newInfo = {...defaultReportInfo, title: 'LAPORAN DOKUMENTASI LAPANGAN'};
     const newPages = { umum: [createNewPage()], progres: [createNewPage()] };
     const now = Date.now();
-    
-    lastSavedHashRef.current = {}; // Bersihkan rekam jejak untuk proyek baru
-    
+    lastSavedHashRef.current = {}; 
     setActiveProjectId(newId);
     setReportInfo(newInfo);
     setReportType('umum');
@@ -572,113 +583,52 @@ const App = () => {
     setProjectTime(now);
     setView('edit');
     isInitialLoad.current = false;
-
-    if (user && !isOfflineMode) saveToCloudNow(newId, newInfo, newPages, 'umum', activeEmail, now);
   };
 
   const openProject = async (project, sessionData = null) => {
     if (!user) { setStatusMsg({ text: 'Mode Offline', type: 'error' }); return; }
     if (isOfflineMode || !db) { setStatusMsg({ text: 'Mode Offline Aktif', type: 'error' }); setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000); return; }
-    
     setActiveProjectId(project.id);
-    
     setStatusMsg({ text: 'Menarik Foto...', type: 'info' });
     setSaveStatus('loading');
-    
     try {
       const projSnap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_projects', project.id));
       const freshProjectData = projSnap.exists() ? projSnap.data() : project;
-
       const pAuthor = freshProjectData.authorEmail || project.authorEmail || activeEmail;
       const pTime = freshProjectData.updatedAt || project.updatedAt || Date.now();
-      
       setProjectAuthor(pAuthor);
       setProjectTime(pTime);
       isInitialLoad.current = true;
-
       let loadedInfo = sessionData?.reportInfo || freshProjectData.reportInfo || defaultReportInfo;
-      // Memastikan laporan lama yang belum punya kolom kustom (customMeta) tetap bisa dibuka
       if (!loadedInfo.customMeta) {
-          loadedInfo = {
-             ...loadedInfo,
-             customMeta: [
-                 { id: 'm1', label: 'Pekerjaan', value: loadedInfo.project || '' },
-                 { id: 'm2', label: 'Instansi', value: loadedInfo.department || '' },
-                 { id: 'm3', label: 'Kontraktor', value: loadedInfo.contractor || '' },
-                 { id: 'm4', label: 'Konsultan', value: loadedInfo.consultant || '' }
-             ]
-          };
+          loadedInfo = { ...loadedInfo, customMeta: [
+              { id: 'm1', label: 'Pekerjaan', value: loadedInfo.project || '' },
+              { id: 'm2', label: 'Instansi', value: loadedInfo.department || '' },
+              { id: 'm3', label: 'Kontraktor', value: loadedInfo.contractor || '' },
+              { id: 'm4', label: 'Konsultan', value: loadedInfo.consultant || '' }
+          ]};
       }
       setReportInfo(loadedInfo);
       const freshType = sessionData?.reportType || freshProjectData.lastActiveTab || freshProjectData.reportType || 'umum';
       setReportType(freshType);
       setView(sessionData?.view || 'edit');
       setCurrentPage(sessionData?.currentPage || 1); 
-
-      let loadedUmum = []; 
-      let loadedProgres = [];
-      const isLegacy = freshProjectData.pageCount !== undefined && freshProjectData.pageCountUmum === undefined;
-      
-      if (isLegacy) {
-        const promises = [];
-        for(let i=0; i < freshProjectData.pageCount; i++) {
-          promises.push(getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${project.id}_page_${i}`)));
-        }
-        const snaps = await Promise.all(promises);
-        snaps.forEach(pSnap => {
-          if(pSnap.exists()) {
-            if (freshProjectData.reportType === 'progres') loadedProgres.push(pSnap.data().data);
-            else loadedUmum.push(pSnap.data().data);
-          }
-        });
-      } else {
-        const umumPromises = [];
-        const progresPromises = [];
-        for(let i=0; i < (freshProjectData.pageCountUmum || 0); i++) {
-          umumPromises.push(getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${project.id}_umum_page_${i}`)));
-        }
-        for(let i=0; i < (freshProjectData.pageCountProgres || 0); i++) {
-          progresPromises.push(getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${project.id}_progres_page_${i}`)));
-        }
-        
-        const [umumSnaps, progresSnaps] = await Promise.all([
-           Promise.all(umumPromises),
-           Promise.all(progresPromises)
-        ]);
-
-        const initialHash = {};
-        
-        umumSnaps.forEach(pSnap => { 
-            if(pSnap.exists()) {
-                const data = pSnap.data().data;
-                loadedUmum.push(data); 
-                initialHash[`${project.id}_umum_${pSnap.data().index}`] = JSON.stringify(data);
-            }
-        });
-        progresSnaps.forEach(pSnap => { 
-            if(pSnap.exists()) {
-                const data = pSnap.data().data;
-                loadedProgres.push(data); 
-                initialHash[`${project.id}_progres_${pSnap.data().index}`] = JSON.stringify(data);
-            }
-        });
-        
-        lastSavedHashRef.current = initialHash;
-      }
-      
-      setPagesData({ 
-        umum: loadedUmum.length > 0 ? loadedUmum : [createNewPage()], 
-        progres: loadedProgres.length > 0 ? loadedProgres : [createNewPage()] 
-      });
+      let loadedUmum = []; let loadedProgres = [];
+      const umumPromises = []; const progresPromises = [];
+      for(let i=0; i < (freshProjectData.pageCountUmum || 0); i++) umumPromises.push(getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${project.id}_umum_page_${i}`)));
+      for(let i=0; i < (freshProjectData.pageCountProgres || 0); i++) progresPromises.push(getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${project.id}_progres_page_${i}`)));
+      const [umumSnaps, progresSnaps] = await Promise.all([Promise.all(umumPromises), Promise.all(progresPromises)]);
+      const initialHash = {};
+      umumSnaps.forEach(pSnap => { if(pSnap.exists()) { const data = pSnap.data().data; loadedUmum.push(data); initialHash[`${project.id}_umum_${pSnap.data().index}`] = JSON.stringify(data); }});
+      progresSnaps.forEach(pSnap => { if(pSnap.exists()) { const data = pSnap.data().data; loadedProgres.push(data); initialHash[`${project.id}_progres_${pSnap.data().index}`] = JSON.stringify(data); }});
+      lastSavedHashRef.current = initialHash;
+      setPagesData({ umum: loadedUmum.length > 0 ? loadedUmum : [createNewPage()], progres: loadedProgres.length > 0 ? loadedProgres : [createNewPage()] });
       setSaveStatus('saved');
       setStatusMsg({ text: '', type: '' });
     } catch (e) { 
       setSaveStatus('error'); 
-      if (e.code === 'resource-exhausted' || e.message?.includes('Quota') || e.message?.includes('quota')) {
-          triggerOfflineMode();
-      } else {
-          setStatusMsg({ text: 'Gagal menarik foto', type: 'error' });
-      }
+      if (e.code === 'resource-exhausted' || e.message?.includes('Quota')) triggerOfflineMode();
+      else setStatusMsg({ text: 'Gagal menarik foto', type: 'error' });
       setTimeout(() => setStatusMsg({ text: '', type: '' }), 4000);
     }
   };
@@ -712,11 +662,8 @@ const App = () => {
                     setSaveStatus('loading');
                     try {
                         const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_projects', session.projectId));
-                        if (snap.exists()) {
-                            await openProject({ id: snap.id, ...snap.data() }, session);
-                        } else {
-                            sessionStorage.removeItem('docufield_active_session');
-                        }
+                        if (snap.exists()) await openProject({ id: snap.id, ...snap.data() }, session);
+                        else sessionStorage.removeItem('docufield_active_session');
                     } catch {}
                 };
                 restore();
@@ -730,22 +677,37 @@ const App = () => {
         sessionStorage.setItem('docufield_active_session', JSON.stringify({
             projectId: activeProjectId, reportType, currentPage, reportInfo, view, projectAuthor, projectTime
         }));
-    } else if (view === 'dashboard') {
-        sessionStorage.removeItem('docufield_active_session');
-    }
+    } else if (view === 'dashboard') sessionStorage.removeItem('docufield_active_session');
   }, [view, activeProjectId, reportType, currentPage, reportInfo, projectAuthor, projectTime]);
 
   const saveCurrentProject = async () => {
     if (activeProjectId) {
-      const isOwner = activeEmail === projectAuthor;
-      const timeToSave = isOwner ? Date.now() : projectTime;
-      setStatusMsg({ text: 'Menyimpan ke Cloud...', type: 'info' });
-      const success = await saveToCloudNow(activeProjectId, reportInfo, pagesData, reportType, projectAuthor, timeToSave);
-      if (success) {
-         setStatusMsg({ text: 'Tersimpan di Cloud!', type: 'success' });
+      if (isProjectEmpty(reportInfo, pagesData)) {
+         setStatusMsg({ text: 'Proyek Masih Kosong!', type: 'info' });
+         setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
+         return;
       }
+      const isOwner = activeEmail === projectAuthor;
+      setStatusMsg({ text: 'Menyimpan ke Cloud...', type: 'info' });
+      const success = await saveToCloudNow(activeProjectId, reportInfo, pagesData, reportType, projectAuthor, isOwner ? Date.now() : projectTime);
+      if (success) setStatusMsg({ text: 'Tersimpan di Cloud!', type: 'success' });
       setTimeout(() => setStatusMsg({ text: '', type: '' }), 3000);
     }
+  };
+
+  // --- FUNGSI TRIGGER CETAK PDF ---
+  const triggerPdfBaking = async () => {
+    setIsPdfLoading(true); setStatusMsg({ text: 'Menyiapkan PDF...', type: 'info' });
+    try {
+      const processed = await Promise.all(pages.map(async (page) => {
+        return await Promise.all(page.map(async (photo) => {
+          if (!photo.src) return photo;
+          const finalSrc = await bakeImageFilters(photo.src, photo.brightness, photo.saturation, photo.zoom, photo.panX, photo.panY);
+          return { ...photo, src: finalSrc, isBaked: true }; 
+        }));
+      }));
+      setBakedPages(processed); setShouldTriggerDownload(true);
+    } catch (err) { setIsPdfLoading(false); setStatusMsg({ text: 'Gagal proses', type: 'error' }); }
   };
 
   useEffect(() => {
@@ -784,104 +746,69 @@ const App = () => {
         const newId = `proj_${Date.now()}`;
         const now = Date.now();
         setActiveProjectId(newId);
-        
         let loadedInfo = data.reportInfo || defaultReportInfo;
-        // Memastikan file mentahan lama tetap cocok dengan sistem baru
         if (!loadedInfo.customMeta) {
-           loadedInfo = {
-             ...loadedInfo,
-             customMeta: [
+           loadedInfo = { ...loadedInfo, customMeta: [
                  { id: 'm1', label: 'Pekerjaan', value: loadedInfo.project || '' },
                  { id: 'm2', label: 'Instansi', value: loadedInfo.department || '' },
                  { id: 'm3', label: 'Kontraktor', value: loadedInfo.contractor || '' },
                  { id: 'm4', label: 'Konsultan', value: loadedInfo.consultant || '' }
-             ]
-           };
+             ]};
         }
-        const loadedType = data.reportType || 'umum';
-        let loadedPages = data.pagesData;
-        if (!loadedPages) {
-            loadedPages = data.reportType === 'progres' 
-              ? { umum: [createNewPage()], progres: data.pages || [createNewPage()] }
-              : { umum: data.pages || [createNewPage()], progres: [createNewPage()] };
-        }
-        
-        lastSavedHashRef.current = {}; // Bersihkan rekam jejak
-        
-        setReportInfo(loadedInfo); setReportType(loadedType); setPagesData(loadedPages);
-        setCurrentPage(1); 
-        setProjectAuthor(activeEmail);
-        setProjectTime(now);
-        setView('edit');
+        lastSavedHashRef.current = {}; 
+        setReportInfo(loadedInfo); setReportType(data.reportType || 'umum'); setPagesData(data.pagesData);
+        setCurrentPage(1); setProjectAuthor(activeEmail); setProjectTime(now); setView('edit');
         isInitialLoad.current = false;
-
-        if (user && !isOfflineMode) saveToCloudNow(newId, loadedInfo, loadedPages, loadedType, activeEmail, now);
+        
+        if (user && !isOfflineMode && !isProjectEmpty(loadedInfo, data.pagesData)) {
+            saveToCloudNow(newId, loadedInfo, data.pagesData, data.reportType || 'umum', activeEmail, now);
+        }
       } catch { setStatusMsg({ text: 'File rusak', type: 'error' }); }
     };
     reader.readAsText(file); e.target.value = '';
   };
 
-  // =========================================================================
-  // EKSEKUSI PENUTUPAN INSTAN (BACKGROUND PROCESSING)
-  // =========================================================================
   const executePendingAction = () => {
     setShowReminderModal(false);
     if (pendingAction === 'dashboard') {
       setStatusMsg({ text: 'Kembali ke Dashboard...', type: 'info' });
-      
       if (activeProjectId && !isOfflineMode) {
-        const isOwner = activeEmail === projectAuthor;
-        const timeToSave = isOwner ? Date.now() : projectTime;
-        saveToCloudNow(activeProjectId, reportInfo, pagesData, reportType, projectAuthor, timeToSave); 
-        
-        setProjects(prevProjects => {
-          const existingIdx = prevProjects.findIndex(p => p.id === activeProjectId);
-          const updatedData = {
-             id: activeProjectId,
-             reportInfo: reportInfo,
-             lastActiveTab: reportType,
-             pageCountUmum: pagesData.umum.length,
-             pageCountProgres: pagesData.progres.length,
-             updatedAt: timeToSave,
-             authorEmail: projectAuthor
-          };
-          let newArray = [...prevProjects];
-          if (existingIdx >= 0) { newArray[existingIdx] = { ...newArray[existingIdx], ...updatedData }; } 
-          else { newArray.push(updatedData); }
-          return newArray.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-        });
+        if (!isProjectEmpty(reportInfo, pagesData)) {
+            const isOwner = activeEmail === projectAuthor;
+            const timeToSave = isOwner ? Date.now() : projectTime;
+            saveToCloudNow(activeProjectId, reportInfo, pagesData, reportType, projectAuthor, timeToSave); 
+            
+            setProjects(prevProjects => {
+              const existingIdx = prevProjects.findIndex(p => p.id === activeProjectId);
+              const updatedData = {
+                 id: activeProjectId,
+                 reportInfo: reportInfo,
+                 lastActiveTab: reportType,
+                 pageCountUmum: pagesData.umum.length,
+                 pageCountProgres: pagesData.progres.length,
+                 updatedAt: timeToSave,
+                 authorEmail: projectAuthor
+              };
+              let newArray = [...prevProjects];
+              if (existingIdx >= 0) { newArray[existingIdx] = { ...newArray[existingIdx], ...updatedData }; } 
+              else { newArray.push(updatedData); }
+              return newArray.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+            });
+        }
       }
-      
-      setView('dashboard'); 
-      setPagesData({ umum: [], progres: [] }); 
-      setBakedPages(null); 
-      setActiveProjectId(null); 
+      setView('dashboard'); setPagesData({ umum: [], progres: [] }); setBakedPages(null); setActiveProjectId(null); 
       setTimeout(() => setStatusMsg({ text: '', type: '' }), 1000);
-
-    } else if (pendingAction === 'logout') {
-      handleLogout();
-    }
+    } else if (pendingAction === 'logout') handleLogout();
     setPendingAction(null);
   };
 
-  const saveMentahanAndProceed = () => {
-    downloadMentahan();
-    setTimeout(() => {
-      executePendingAction();
-    }, 300); 
-  };
+  const saveMentahanAndProceed = () => { downloadMentahan(); setTimeout(() => executePendingAction(), 300); };
 
-  // =========================================================================
-  // PENJAGA KUALITAS FOTO & PENCEGAH ERROR LIMIT 1MB FIRESTORE
-  // =========================================================================
   const processInitialUpload = (dataUrl) => {
     return new Promise((r) => {
       const img = new Image(); img.src = dataUrl;
       img.onload = () => {
         const canvas = document.createElement('canvas'); 
-        // Firestore membatasi ukuran 1 dokumen maksimal 1MB.
-        // 1 Halaman berisi 6 foto. Kita kompres ke max 640px dengan kualitas 0.65 
-        // agar 6 foto aman masuk ke dalam 1 dokumen tanpa mengurangi ketajaman di PDF.
         const max = 640;
         let w = img.width, h = img.height;
         if (w > max || h > max) { 
@@ -891,7 +818,7 @@ const App = () => {
         canvas.width = w; canvas.height = h; 
         const ctx = canvas.getContext('2d'); 
         ctx.drawImage(img, 0, 0, w, h);
-        r(canvas.toDataURL('image/jpeg', 0.65)); // Kualitas 65% untuk menghemat ukuran
+        r(canvas.toDataURL('image/jpeg', 0.65)); 
       };
       img.onerror = () => r(null);
     });
@@ -953,10 +880,9 @@ const App = () => {
     const file = e.target.files?.[0]; if (!file) return;
     setStatusMsg({ text: 'Mengolah Foto...', type: 'info' });
     
-    // Gunakan ObjectURL (Lebih hemat memori, mencegah iPhone Crash)
     const objectUrl = URL.createObjectURL(file);
     const cropped = await processInitialUpload(objectUrl);
-    URL.revokeObjectURL(objectUrl); // Bersihkan memori
+    URL.revokeObjectURL(objectUrl); 
     
     if (cropped) {
       setPages(prev => {
@@ -1045,34 +971,6 @@ const App = () => {
       setCurrentPage(1); 
   };
 
-  const triggerPdfBaking = async () => {
-    setIsPdfLoading(true); setStatusMsg({ text: 'Menyiapkan PDF...', type: 'info' });
-    try {
-      const processed = await Promise.all(pages.map(async (page) => {
-        return await Promise.all(page.map(async (photo) => {
-          if (!photo.src) return photo;
-          const finalSrc = await bakeImageFilters(photo.src, photo.brightness, photo.saturation, photo.zoom, photo.panX, photo.panY);
-          return { ...photo, src: finalSrc, isBaked: true }; 
-        }));
-      }));
-      setBakedPages(processed); setShouldTriggerDownload(true);
-    } catch (err) { setIsPdfLoading(false); setStatusMsg({ text: 'Gagal proses', type: 'error' }); }
-  };
-
-  useEffect(() => {
-    if (shouldTriggerDownload && bakedPages) {
-      const generatePDF = async () => {
-        const element = document.getElementById('pdf-render-area');
-        const images = element.querySelectorAll('img');
-        await Promise.all(Array.from(images).map(img => img.complete ? Promise.resolve() : new Promise(r => img.onload = r)));
-        const options = { margin: 0, filename: `${reportInfo.title.replace(/ /g, '_')}.pdf`, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true, width: 794, windowWidth: 794, scrollX: 0, scrollY: 0, x: 0, y: 0 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } };
-        try { await window.html2pdf().set(options).from(element).save(); setStatusMsg({ text: 'PDF Diunduh!', type: 'success' }); } 
-        finally { setIsPdfLoading(false); setBakedPages(null); setShouldTriggerDownload(false); setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000); }
-      };
-      generatePDF();
-    }
-  }, [shouldTriggerDownload, bakedPages, reportInfo]);
-
   const downloadPPTX = async () => {
     if (!isLibraryReady.ppt) return;
     setIsPptLoading(true); setStatusMsg({ text: 'Membangun PPTX Identik...', type: 'info' });
@@ -1100,7 +998,6 @@ const App = () => {
           let currentX = PAGE_MARGIN_SIDE;
           for (let i = 0; i < 3; i++) {
             if (reportInfo.logos[i]) {
-              // Tempatkan logo berjejer rata kiri
               slide.addImage({ data: reportInfo.logos[i], x: currentX, y: curY, w: 1.8, h: lh, sizing: { type: 'contain' } });
               currentX += 1.9; 
             }
@@ -1128,7 +1025,6 @@ const App = () => {
           curY += (m.v?.length > 80) ? 0.22 : 0.14;
         });
         
-        // Sesuaikan warna garis bawah judul PPTX dengan template (opsional, default hitam/hijau)
         const isModernTemplate = reportInfo.template === 'modern';
         let lineColor = reportInfo.template === 'inspeksi' ? '1E3A8A' : '0F172A'; 
         if (isModernTemplate) lineColor = '3730A3'; 
@@ -1166,15 +1062,9 @@ const App = () => {
 
   const ReportPage = ({ data, isFinal = false }) => {
     const template = reportInfo.template || 'klasik';
-
-    // -------------------------------------------------------------
-    // LOGIKA DESAIN INSPEKSI (TRIBHAKTI FORMAT)
-    // -------------------------------------------------------------
     if (template === 'inspeksi') {
       return (
         <div className={`bg-white w-[210mm] flex flex-col font-sans relative box-border ${isFinal ? 'report-page-final' : 'mb-10 shadow-2xl rounded-sm border border-slate-200 shrink-0'}`} style={{ height: '296.7mm', padding: '12mm 15mm', margin: '0 auto', pageBreakAfter: 'always' }}>
-          
-          {/* Header Mirip Tribhakti */}
           <div className="text-center mb-4 flex-none">
             {reportInfo.logos?.[0] ? (
                <img src={reportInfo.logos[0]} className="h-16 w-auto mx-auto object-contain" alt="Logo" />
@@ -1185,23 +1075,14 @@ const App = () => {
                </div>
             )}
           </div>
-          
-          {/* Tabel Grid Foto 2 Kolom (Persis seperti Halaman 7-13 PDF) */}
           <div className="flex-grow flex flex-col">
             <div className="border-t-[1.5px] border-l-[1.5px] border-black flex flex-wrap w-full bg-white flex-grow">
               {data.map((p, i) => (
                 <div key={i} className="w-1/2 border-r-[1.5px] border-b-[1.5px] border-black flex flex-col box-border p-1" style={{ height: '33.333%' }}>
                   <div className="flex-grow overflow-hidden relative bg-white flex items-center justify-center border border-transparent">
                      {p?.src ? (
-                       <img 
-                          src={p.src} 
-                          className="w-full h-full object-cover" 
-                          style={{ filter: `brightness(${p.brightness || 100}%) saturate(${p.saturation || 100}%)`, transform: `scale(${(p.zoom || 100) / 100})`, transformOrigin: `${p.panX ?? 50}% ${p.panY ?? 50}%` }} 
-                          alt="" 
-                       />
-                     ) : (
-                       <div className="text-slate-200"><ImageIcon size={40}/></div>
-                     )}
+                       <img src={p.src} className="w-full h-full object-cover" style={{ filter: `brightness(${p.brightness || 100}%) saturate(${p.saturation || 100}%)`, transform: `scale(${(p.zoom || 100) / 100})`, transformOrigin: `${p.panX ?? 50}% ${p.panY ?? 50}%` }} alt="" />
+                     ) : ( <div className="text-slate-200"><ImageIcon size={40}/></div> )}
                   </div>
                   <div className="h-6 flex items-center justify-center text-[8pt] font-bold text-black bg-white mt-1 text-center break-words px-1 line-clamp-2">
                     {p?.note || '-'}
@@ -1210,49 +1091,23 @@ const App = () => {
               ))}
             </div>
           </div>
-
         </div>
       );
     }
-    
-    // -------------------------------------------------------------
-    // LOGIKA DESAIN KLASIK & MODERN
-    // -------------------------------------------------------------
-    const cMeta = reportInfo.customMeta || [
-        { id: 'm1', label: 'Pekerjaan', value: reportInfo.project || '' },
-        { id: 'm2', label: 'Instansi', value: reportInfo.department || '' },
-        { id: 'm3', label: 'Kontraktor', value: reportInfo.contractor || '' },
-        { id: 'm4', label: 'Konsultan', value: reportInfo.consultant || '' }
-    ];
-    const meta = [
-        ...cMeta.map(m => ({ l: m.label, v: m.value })),
-        { l: "Tahun", v: reportInfo.date }
-    ];
-    
+    const cMeta = reportInfo.customMeta || [];
+    const meta = [...cMeta.map(m => ({ l: m.label, v: m.value })), { l: "Tahun", v: reportInfo.date }];
     const isModern = template === 'modern';
     const baseFontClass = isModern ? 'font-serif text-slate-800' : 'font-sans text-black';
     const headerTitleClass = isModern ? 'text-indigo-950 tracking-wide font-bold' : 'text-slate-900 font-black';
-    
-    // Header Border Color based on Template and Report Type
-    let headerBorderClass = 'border-b-2 border-slate-900';
-    if (isModern) headerBorderClass = reportType === 'progres' ? 'border-b-4 border-emerald-700' : 'border-b-4 border-indigo-800';
-    else headerBorderClass = reportType === 'progres' ? 'border-b-2 border-emerald-500' : 'border-b-2 border-slate-900';
-
+    let headerBorderClass = isModern ? (reportType === 'progres' ? 'border-b-4 border-emerald-700' : 'border-b-4 border-indigo-800') : (reportType === 'progres' ? 'border-b-2 border-emerald-500' : 'border-b-2 border-slate-900');
     const cardContainerClass = isModern ? 'border border-indigo-100 shadow-md rounded-2xl' : 'border border-slate-200 shadow-sm rounded-xl';
     const imgContainerClass = isModern ? 'rounded-xl' : 'rounded-lg';
-    
-    // Note left-border line color
-    let noteBorderClass = 'border-blue-500';
-    if (isModern) noteBorderClass = reportType === 'progres' ? 'border-emerald-600' : 'border-indigo-500';
-    else noteBorderClass = reportType === 'progres' ? 'border-emerald-500' : 'border-blue-500';
-
+    let noteBorderClass = isModern ? (reportType === 'progres' ? 'border-emerald-600' : 'border-indigo-500') : (reportType === 'progres' ? 'border-emerald-500' : 'border-blue-500');
     return (
       <div className={`bg-white w-[210mm] flex flex-col ${baseFontClass} relative box-border ${isFinal ? 'report-page-final' : 'mb-10 shadow-2xl rounded-2xl border border-slate-200 shrink-0'}`} style={{ height: '296.7mm', padding: '6mm 15mm 15mm 15mm', margin: '0 auto', pageBreakAfter: 'always' }}>
         <div className={`text-center pb-4 mb-5 flex-none ${headerBorderClass}`}>
           <div className="flex justify-start items-center gap-6 mb-3 h-12">
-            {reportInfo.logos?.[0] && <img src={reportInfo.logos[0]} className="h-full w-auto object-contain object-left" alt="" />}
-            {reportInfo.logos?.[1] && <img src={reportInfo.logos[1]} className="h-full w-auto object-contain object-left" alt="" />}
-            {reportInfo.logos?.[2] && <img src={reportInfo.logos[2]} className="h-full w-auto object-contain object-left" alt="" />}
+            {reportInfo.logos?.map((l, i) => l && <img key={i} src={l} className="h-full w-auto object-contain object-left" alt="" />)}
           </div>
           <h2 className={`text-xl uppercase mb-4 leading-tight ${headerTitleClass}`}>{reportInfo.title}</h2>
           <div className="text-left space-y-0.5">
@@ -1301,18 +1156,13 @@ const App = () => {
               </div>
             </div>
             {loginError && <div className="bg-red-50 text-red-600 p-4 rounded-2xl text-xs font-bold border border-red-100 flex items-start gap-2"><AlertCircle size={16} className="shrink-0 mt-0.5" /><span>{loginError}</span></div>}
-            
-            {/* TAMPILAN ERROR DEBUG UNTUK MEMBANTU ANDA */}
             {debugError && (
               <div className="bg-orange-50 p-3 rounded-2xl text-[10px] text-orange-700 font-mono border border-orange-200 text-center break-words">
                 <strong>Info Error Firebase:</strong> {debugError}
-                <br/><br/>
-                <em>Pastikan domain Vercel Anda sudah ditambahkan di menu "Authorized Domains" pada Firebase Authentication.</em>
               </div>
             )}
-
-            <button type="submit" disabled={!isAppReady && !debugError} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl sm:rounded-3xl font-black uppercase tracking-widest shadow-xl shadow-blue-500/30 active:scale-95 transition-all text-sm disabled:opacity-50">
-              {isAppReady ? 'Masuk' : (debugError ? 'Coba Lagi' : 'Memuat...')}
+            <button type="submit" disabled={!isAppReady} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl sm:rounded-3xl font-black uppercase tracking-widest shadow-xl shadow-blue-500/30 active:scale-95 transition-all text-sm disabled:opacity-50">
+              {isAppReady ? 'Masuk' : 'Memuat...'}
             </button>
           </form>
         </div>
@@ -1320,30 +1170,18 @@ const App = () => {
     );
   }
 
-  if (!isAppReady) {
-    return (
-      <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center">
-        <Cloud size={56} className="text-blue-500 mb-6 animate-pulse" /><Loader2 size={32} className="animate-spin text-blue-600 mb-4" />
-        <p className="text-slate-500 font-black tracking-widest uppercase text-sm">Menghubungkan Sesi...</p>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-slate-100 font-sans pb-20 overflow-x-hidden relative">
-      
       <header className="bg-slate-900 text-white p-3 sm:p-4 sticky top-0 z-50 flex flex-col sm:flex-row gap-3 sm:gap-4 items-center justify-between shadow-2xl border-b border-white/5">
         <div className="flex items-center justify-between w-full sm:w-auto">
           <div className="flex items-center gap-2.5">
             <Cloud size={22} className={reportType === 'progres' ? 'text-emerald-400' : 'text-blue-400'}/>
             <h1 className="font-black text-sm uppercase tracking-[0.2em]">Aplikasi Dokumentasi</h1>
           </div>
-          
           <div className="flex items-center gap-2 text-[9px] sm:text-[10px] uppercase font-black tracking-widest sm:ml-4">
             {!user ? <span className="flex items-center gap-1.5 text-orange-400"><WifiOff size={12} /> OFFLINE</span> : 
              isOfflineMode ? <span className="flex items-center gap-1.5 text-red-500"><WifiOff size={12} /> LOKAL</span> : (
               <>
-                {saveStatus === 'loading' && <span className="flex items-center gap-1.5 text-blue-400"><Loader2 size={12} className="animate-spin" /> Load...</span>}
                 {saveStatus === 'saving' && <span className="flex items-center gap-1.5 text-blue-400"><Loader2 size={12} className="animate-spin" /> Mengirim...</span>}
                 {saveStatus === 'saved' && <span className="flex items-center gap-1.5 text-emerald-400"><CheckCircle2 size={12} /> OK</span>}
                 {saveStatus === 'error' && <button onClick={() => setRetryTrigger(r => r + 1)} className="text-red-400 hover:text-red-300 transition-all flex items-center gap-1 bg-red-400/10 px-2 py-1 rounded-md"><AlertCircle size={12} /> Gagal</button>}
@@ -1351,117 +1189,84 @@ const App = () => {
             )}
           </div>
         </div>
-        
         <div className="flex gap-2 items-center w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0 scrollbar-hide">
           {view !== 'dashboard' && (
             <>
               <button onClick={() => { setPendingAction('dashboard'); setShowReminderModal(true); }} className="shrink-0 flex items-center gap-1.5 sm:gap-2 bg-white/10 hover:bg-white/20 px-3 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-bold transition-all">
                 <ArrowLeft size={14} /> <span className="hidden sm:inline">KEMBALI</span>
               </button>
-              
               <button onClick={saveCurrentProject} disabled={saveStatus === 'saving' || isOfflineMode} className="shrink-0 flex items-center gap-1.5 sm:gap-2 bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-bold transition-all disabled:opacity-50 shadow-lg shadow-blue-500/30">
                 {saveStatus === 'saving' ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} 
                 <span className="hidden sm:inline">SIMPAN CLOUD</span>
               </button>
-
               <div className="w-px h-6 bg-white/20 mx-1 shrink-0"></div>
-              
               <button onClick={() => setView('edit')} className={`shrink-0 px-3 py-2 sm:px-5 sm:py-2.5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-black transition-all ${view === 'edit' ? 'bg-white text-black shadow-lg' : 'text-slate-400 hover:text-white'}`}>EDITOR</button>
               <button onClick={() => setView('preview')} className={`shrink-0 px-3 py-2 sm:px-5 sm:py-2.5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-black transition-all ${view === 'preview' ? 'bg-white text-black shadow-lg' : 'text-slate-400 hover:text-white'}`}>PREVIEW</button>
-              
               <div className="w-px h-6 bg-white/20 mx-1 shrink-0"></div>
-              
-              <button onClick={downloadMentahan} className="shrink-0 bg-slate-700 hover:bg-slate-600 px-3 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl font-black text-[10px] sm:text-xs text-white flex items-center gap-1.5 sm:gap-2 shadow-lg transition-all" title="Simpan Mentahan (.json)">
-                <HardDrive size={16} className="w-4 h-4 sm:w-5 sm:h-5"/> <span className="hidden lg:inline">MENTAHAN (.json)</span>
-              </button>
-              <button onClick={triggerPdfBaking} disabled={isPdfLoading} className="shrink-0 bg-emerald-600 hover:bg-emerald-500 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl sm:rounded-2xl font-black text-[10px] sm:text-xs text-white flex items-center gap-1.5 sm:gap-2 shadow-lg transition-all active:scale-95 disabled:opacity-50">
-                {isPdfLoading ? <Loader2 size={16} className="animate-spin w-4 h-4 sm:w-5 sm:h-5" /> : <FileDown size={16} className="w-4 h-4 sm:w-5 sm:h-5"/>} PDF
-              </button>
-              <button onClick={downloadPPTX} disabled={isPptLoading} className="shrink-0 bg-orange-600 hover:bg-orange-500 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl sm:rounded-2xl font-black text-[10px] sm:text-xs text-white flex items-center gap-1.5 sm:gap-2 shadow-lg transition-all active:scale-95 disabled:opacity-50">
-                {isPptLoading ? <Loader2 size={16} className="animate-spin w-4 h-4 sm:w-5 sm:h-5" /> : <Presentation size={16} className="w-4 h-4 sm:w-5 sm:h-5"/>} PPTX
-              </button>
+              <button onClick={downloadMentahan} className="shrink-0 bg-slate-700 hover:bg-slate-600 px-3 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl font-black text-[10px] sm:text-xs text-white flex items-center gap-1.5 sm:gap-2 shadow-lg transition-all" title="Simpan Mentahan (.json)"><HardDrive size={16} /><span className="hidden lg:inline">MENTAHAN</span></button>
+              <button onClick={triggerPdfBaking} disabled={isPdfLoading} className="shrink-0 bg-emerald-600 hover:bg-emerald-500 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl sm:rounded-2xl font-black text-[10px] sm:text-xs text-white flex items-center gap-1.5 shadow-lg active:scale-95 disabled:opacity-50">{isPdfLoading ? <Loader2 size={16} className="animate-spin"/> : <FileDown size={16}/>} PDF</button>
+              <button onClick={downloadPPTX} disabled={isPptLoading} className="shrink-0 bg-orange-600 hover:bg-orange-500 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl sm:rounded-2xl font-black text-[10px] sm:text-xs text-white flex items-center gap-1.5 shadow-lg active:scale-95 disabled:opacity-50">{isPptLoading ? <Loader2 size={16} className="animate-spin"/> : <Presentation size={16}/>} PPTX</button>
             </>
           )}
-
           {view === 'dashboard' && (
-            <button onClick={() => { setPendingAction('logout'); setShowReminderModal(true); }} className="shrink-0 bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-black uppercase flex items-center gap-1.5 sm:gap-2 transition-all ml-auto">
-              <LogOut size={14} className="w-4 h-4 sm:w-5 sm:h-5"/> Keluar
-            </button>
+            <button onClick={() => { setPendingAction('logout'); setShowReminderModal(true); }} className="shrink-0 bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-black uppercase flex items-center gap-1.5 transition-all ml-auto"><LogOut size={14}/> Keluar</button>
           )}
         </div>
       </header>
 
-      {statusMsg.text && <div className={`fixed top-20 sm:top-24 left-1/2 -translate-x-1/2 z-[100] px-6 py-2.5 sm:px-8 sm:py-3.5 rounded-2xl sm:rounded-3xl shadow-2xl flex items-center gap-3 sm:gap-4 font-black text-[10px] sm:text-xs text-white uppercase tracking-widest animate-in slide-in-from-top-6 ${statusMsg.type === 'error' ? 'bg-red-600' : statusMsg.type === 'success' ? 'bg-emerald-600' : 'bg-blue-600 border border-white/20'}`}>{statusMsg.type === 'info' ? <Loader2 size={16} className="animate-spin" /> : statusMsg.type === 'success' ? <CheckCircle2 size={16} /> : null} {statusMsg.text}</div>}
+      {statusMsg.text && <div className={`fixed top-20 sm:top-24 left-1/2 -translate-x-1/2 z-[100] px-6 py-2.5 rounded-2xl shadow-2xl flex items-center gap-3 font-black text-[10px] sm:text-xs text-white uppercase tracking-widest animate-in slide-in-from-top-6 ${statusMsg.type === 'error' ? 'bg-red-600' : 'bg-blue-600 border border-white/20'}`}>{statusMsg.type === 'info' && <Loader2 size={16} className="animate-spin" />} {statusMsg.text}</div>}
 
       {view === 'dashboard' && (
         <main className="max-w-6xl mx-auto p-4 sm:p-8 animate-in fade-in duration-500">
-          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end mb-8 sm:mb-10 gap-6">
+          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end mb-8 gap-6">
             <div>
-              <h2 className="text-2xl sm:text-3xl font-black text-slate-900 mb-2 flex items-center gap-2.5 sm:gap-3"><FolderOpen className="text-blue-600 w-8 h-8 sm:w-9 sm:h-9" /> Arsip Laporan</h2>
-              <p className="text-slate-500 font-medium flex items-center gap-2 flex-wrap text-xs sm:text-sm">Masuk sebagai: <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-md font-bold">{activeEmail}</span>{isAdmin && <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded-md font-bold text-[9px] sm:text-[10px] uppercase shadow-sm">👑 Admin</span>}</p>
-              
-              {/* FILTER USER KHUSUS ADMIN */}
+              <h2 className="text-2xl sm:text-3xl font-black text-slate-900 mb-2 flex items-center gap-2.5"><FolderOpen className="text-blue-600 w-8 h-8" /> Arsip Laporan</h2>
+              <p className="text-slate-500 font-medium text-xs sm:text-sm">Masuk sebagai: <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-md font-bold">{activeEmail}</span>{isAdmin && <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded-md font-bold text-[9px] ml-2 shadow-sm">👑 Admin</span>}</p>
               {isAdmin && projects.length > 0 && (
-                <div className="mt-4 flex flex-wrap items-center gap-2 sm:gap-3 animate-in fade-in slide-in-from-left-4">
-                  <div className="flex items-center gap-1.5 text-[10px] sm:text-xs font-black text-slate-400 uppercase tracking-widest">
-                     <Filter size={14} className="text-blue-500" /> FILTER USER:
-                  </div>
-                  <select 
-                    value={filterEmail} 
-                    onChange={e => setFilterEmail(e.target.value)}
-                    className="bg-white border-2 border-slate-200 focus:border-blue-500 text-slate-700 font-bold text-[10px] sm:text-xs rounded-xl px-3 py-2 outline-none shadow-sm cursor-pointer transition-all"
-                  >
+                <div className="mt-4 flex flex-wrap items-center gap-2 animate-in fade-in slide-in-from-left-4">
+                  <div className="flex items-center gap-1.5 text-[10px] font-black text-slate-400 uppercase tracking-widest"><Filter size={14} className="text-blue-500" /> FILTER USER:</div>
+                  <select value={filterEmail} onChange={e => setFilterEmail(e.target.value)} className="bg-white border-2 border-slate-200 text-slate-700 font-bold text-[10px] rounded-xl px-3 py-2 outline-none shadow-sm cursor-pointer transition-all">
                     <option value="all">Tampilkan Semua</option>
-                    {uniqueAuthors.map(email => (
-                      <option key={email} value={email}>{email === activeEmail ? `${email} (Saya)` : email}</option>
-                    ))}
+                    {uniqueAuthors.map(email => (<option key={email} value={email}>{email === activeEmail ? `${email} (Saya)` : email}</option>))}
                   </select>
                 </div>
               )}
             </div>
             <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
-              {isAdmin && <button onClick={() => setShowAccessModal(true)} className="w-full sm:w-auto bg-slate-800 text-white hover:bg-slate-700 px-4 sm:px-6 py-3.5 sm:py-4 rounded-2xl sm:rounded-[24px] font-black uppercase text-[10px] sm:text-xs flex items-center justify-center gap-2 shadow-lg transition-all active:scale-95"><User size={16} className="sm:w-[18px] sm:h-[18px]"/> AKSES</button>}
-              <label className="w-full sm:w-auto bg-white text-blue-600 border-2 border-blue-600 hover:bg-blue-50 px-4 sm:px-6 py-3.5 sm:py-4 rounded-2xl sm:rounded-[24px] font-black uppercase text-[10px] sm:text-xs flex items-center justify-center gap-2 sm:gap-3 shadow-lg cursor-pointer transition-all active:scale-95"><UploadCloud size={16} className="sm:w-5 sm:h-5"/> BUKA MENTAHAN<input type="file" accept=".json" onChange={loadMentahan} className="hidden" /></label>
-              <button onClick={createNewProject} className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white px-4 sm:px-8 py-3.5 sm:py-4 rounded-2xl sm:rounded-[24px] font-black uppercase text-[10px] sm:text-xs flex items-center justify-center gap-2 sm:gap-3 shadow-xl shadow-blue-500/30 transition-all active:scale-95"><Plus size={16} className="sm:w-5 sm:h-5"/> BUAT LAPORAN</button>
+              {isAdmin && <button onClick={() => setShowAccessModal(true)} className="w-full sm:w-auto bg-slate-800 text-white px-4 sm:px-6 py-3.5 rounded-2xl font-black uppercase text-[10px] sm:text-xs flex items-center justify-center gap-2 shadow-lg transition-all active:scale-95"><User size={16}/> AKSES</button>}
+              <label className="w-full sm:w-auto bg-white text-blue-600 border-2 border-blue-600 px-4 sm:px-6 py-3.5 rounded-2xl font-black uppercase text-[10px] sm:text-xs flex items-center justify-center gap-2 shadow-lg cursor-pointer transition-all active:scale-95"><UploadCloud size={16}/> BUKA MENTAHAN<input type="file" accept=".json" onChange={loadMentahan} className="hidden" /></label>
+              <button onClick={createNewProject} className="w-full sm:w-auto bg-blue-600 text-white px-4 sm:px-8 py-3.5 rounded-2xl font-black uppercase text-[10px] sm:text-xs flex items-center justify-center gap-2 shadow-xl shadow-blue-500/30 transition-all active:scale-95"><Plus size={16}/> BUAT LAPORAN</button>
             </div>
           </div>
           {isOfflineMode ? (
-            <div className="bg-orange-50 rounded-[32px] sm:rounded-[40px] border-2 border-dashed border-orange-200 p-8 sm:p-10 flex flex-col items-center justify-center text-center">
-              <WifiOff size={40} className="text-orange-400 mb-4 sm:mb-6 sm:w-12 sm:h-12" /><h3 className="text-lg sm:text-xl font-black text-orange-700 mb-2">Mode Lokal (Offline)</h3>
-              <p className="text-orange-600 max-w-lg mb-6 text-xs sm:text-sm">Anda telah melampaui batas kuota Firebase harian. Koneksi cloud dihentikan untuk keamanan. Anda bisa lanjut bekerja dengan aman menggunakan fitur <strong>BUKA MENTAHAN</strong> dan <strong>MENTAHAN (.json)</strong>.</p>
-            </div>
-          ) : !user ? (
-            <div className="bg-slate-100 rounded-[32px] sm:rounded-[40px] border-2 border-dashed border-slate-300 p-8 sm:p-10 flex flex-col items-center justify-center text-center">
-              <Loader2 size={40} className="text-blue-400 mb-4 sm:mb-6 sm:w-12 sm:h-12 animate-spin" /><h3 className="text-lg sm:text-xl font-black text-slate-700 mb-2">Menyambungkan ke Cloud</h3>
-              <p className="text-slate-500 max-w-lg mb-6 text-xs sm:text-sm">Mohon tunggu sebentar...</p>
+            <div className="bg-orange-50 rounded-[32px] border-2 border-dashed border-orange-200 p-8 flex flex-col items-center justify-center text-center">
+              <WifiOff size={40} className="text-orange-400 mb-4" /><h3 className="text-lg font-black text-orange-700 mb-2">Mode Lokal (Offline)</h3>
+              <p className="text-orange-600 max-w-lg text-xs sm:text-sm">Batas kuota database harian penuh. Anda tetap bisa bekerja dan menyimpan hasil via <strong>MENTAHAN (.json)</strong>.</p>
             </div>
           ) : filteredProjects.length === 0 ? (
-            <div className="bg-white rounded-[32px] sm:rounded-[40px] border-2 border-dashed border-slate-300 p-10 sm:p-16 flex flex-col items-center justify-center text-center">
-              <ClipboardList size={48} className="text-slate-300 mb-4 sm:mb-6 sm:w-16 sm:h-16" />
-              <h3 className="text-lg sm:text-xl font-black text-slate-600 mb-2">{filterEmail !== 'all' ? 'Tidak Ada Laporan' : 'Belum Ada Laporan'}</h3>
-              <p className="text-slate-400 text-xs sm:text-sm">{filterEmail !== 'all' ? 'User ini belum membuat/menyimpan laporan.' : 'Klik buat laporan baru.'}</p>
+            <div className="bg-white rounded-[32px] border-2 border-dashed border-slate-300 p-10 flex flex-col items-center justify-center text-center">
+              <ClipboardList size={48} className="text-slate-300 mb-4" /><h3 className="text-lg font-black text-slate-600 mb-2">Belum Ada Laporan</h3>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
               {filteredProjects.map(p => (
-                <div key={p.id} className="bg-white rounded-[24px] sm:rounded-[32px] p-5 sm:p-6 shadow-xl border border-slate-200 hover:border-blue-400 transition-all flex flex-col hover:-translate-y-1">
-                  <div className="flex justify-between items-start mb-3 sm:mb-4">
-                     <span className="px-2 sm:px-3 py-1 rounded-lg sm:rounded-xl text-[9px] sm:text-[10px] font-black uppercase bg-blue-100 text-blue-700">DOKUMENTASI</span>
-                     <button onClick={(e) => { e.stopPropagation(); setShowDeleteProjectModal({show: true, project: p}); }} className="p-1.5 sm:p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg sm:rounded-xl transition-all"><Trash2 size={16} className="sm:w-[18px] sm:h-[18px]"/></button>
+                <div key={p.id} className="bg-white rounded-[24px] p-5 shadow-xl border border-slate-200 hover:border-blue-400 transition-all flex flex-col hover:-translate-y-1">
+                  <div className="flex justify-between items-start mb-3">
+                     <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase bg-blue-100 text-blue-700">DOKUMENTASI</span>
+                     <button onClick={(e) => { e.stopPropagation(); setShowDeleteProjectModal({show: true, project: p}); }} className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg transition-all"><Trash2 size={16}/></button>
                   </div>
-                  <h3 className="text-base sm:text-lg font-black text-slate-800 mb-3 sm:mb-4 line-clamp-2">{p.reportInfo?.title || 'Laporan'}</h3>
-                  <div className="space-y-1.5 sm:space-y-2 mb-4 sm:mb-6 flex-grow text-[10px] sm:text-xs text-slate-500 font-medium">
-                    <div className="flex items-center gap-2 truncate"><Briefcase size={12} className="sm:w-3.5 sm:h-3.5 text-slate-400" /> {p.reportInfo?.customMeta?.[0]?.value || p.reportInfo?.project || '-'}</div>
-                    <div className="flex items-center gap-2"><Palette size={12} className="sm:w-3.5 sm:h-3.5 text-slate-400" /> Tema: <span className="capitalize">{p.reportInfo?.template || 'Klasik'}</span></div>
+                  <h3 className="text-base font-black text-slate-800 mb-3 line-clamp-2">{p.reportInfo?.title || 'Laporan'}</h3>
+                  <div className="space-y-1.5 mb-4 flex-grow text-[10px] text-slate-500 font-medium">
+                    <div className="flex items-center gap-2 truncate"><Briefcase size={12} /> {p.reportInfo?.customMeta?.[0]?.value || p.reportInfo?.project || '-'}</div>
                     {isAdmin && (
                       <>
-                        <div className="flex items-center gap-2 truncate"><User size={12} className="sm:w-3.5 sm:h-3.5 text-slate-400" /> Oleh: <strong className="text-slate-600">{p.authorEmail || 'Anonim'}</strong></div>
-                        <div className="flex items-center gap-2"><Calendar size={12} className="sm:w-3.5 sm:h-3.5 text-slate-400" /> Diubah: {new Date(p.updatedAt || Date.now()).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
+                        <div className="flex items-center gap-2 truncate"><User size={12} /> Oleh: <strong className="text-slate-600">{p.authorEmail || 'Anonim'}</strong></div>
+                        <div className="flex items-center gap-2"><Calendar size={12} /> {new Date(p.updatedAt || Date.now()).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: '2-digit' })}</div>
                       </>
                     )}
-                    <div className="flex items-center gap-2"><FileText size={12} className="sm:w-3.5 sm:h-3.5 text-slate-400" /> {((p.pageCountUmum || 0) + (p.pageCountProgres || 0)) || p.pageCount || 0} Halaman</div>
+                    <div className="flex items-center gap-2"><FileText size={12} /> {((p.pageCountUmum || 0) + (p.pageCountProgres || 0)) || 0} Halaman</div>
                   </div>
-                  <button onClick={() => openProject(p)} className="w-full bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl font-black text-[10px] sm:text-xs uppercase transition-all flex justify-center items-center gap-2">Buka Laporan <ChevronRight size={14} className="sm:w-4 sm:h-4" /></button>
+                  <button onClick={() => openProject(p)} className="w-full bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 py-2.5 rounded-xl font-black text-[10px] uppercase transition-all flex justify-center items-center gap-2">Buka Laporan <ChevronRight size={14} /></button>
                 </div>
               ))}
             </div>
@@ -1470,27 +1275,26 @@ const App = () => {
       )}
 
       {view === 'edit' && (
-        <main className="max-w-6xl mx-auto p-4 sm:p-8 animate-in fade-in slide-in-from-bottom-8 duration-700">
-          <div className="flex bg-white p-1.5 sm:p-2 rounded-[24px] sm:rounded-[32px] mb-6 sm:mb-8 shadow-xl max-w-md mx-auto border border-slate-200">
-             <button onClick={() => switchTab('umum')} className={`flex-1 flex justify-center items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 rounded-2xl sm:rounded-3xl text-[9px] sm:text-[10px] font-black uppercase transition-all ${reportType === 'umum' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-50'}`}><ClipboardList size={14}/> Umum</button>
-             <button onClick={() => switchTab('progres')} className={`flex-1 flex justify-center items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 rounded-2xl sm:rounded-3xl text-[9px] sm:text-[10px] font-black uppercase transition-all ${reportType === 'progres' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-50'}`}><Target size={14}/> Progres</button>
+        <main className="max-w-6xl mx-auto p-4 sm:p-8 animate-in fade-in duration-700">
+          <div className="flex bg-white p-1.5 rounded-[24px] mb-6 shadow-xl max-w-md mx-auto border border-slate-200">
+             <button onClick={() => switchTab('umum')} className={`flex-1 flex justify-center items-center gap-2 py-2.5 rounded-2xl text-[9px] font-black uppercase transition-all ${reportType === 'umum' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400'}`}><ClipboardList size={14}/> Umum</button>
+             <button onClick={() => switchTab('progres')} className={`flex-1 flex justify-center items-center gap-2 py-2.5 rounded-2xl text-[9px] font-black uppercase transition-all ${reportType === 'progres' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400'}`}><Target size={14}/> Progres</button>
           </div>
           
-          <section className="bg-white rounded-[32px] sm:rounded-[40px] p-5 sm:p-8 shadow-2xl mb-8 sm:mb-10 border border-slate-200/60">
-            <div className="mb-6 sm:mb-8">
-              <label className="text-[9px] sm:text-[10px] font-black text-slate-400 tracking-widest ml-2 block mb-2 sm:mb-3 uppercase">Logo Header (3 Slot)</label>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+          <section className="bg-white rounded-[32px] p-5 sm:p-8 shadow-2xl mb-8 border border-slate-200/60">
+            <div className="mb-6">
+              <label className="text-[9px] font-black text-slate-400 tracking-widest ml-2 block mb-2 uppercase">Logo Header (Berbaris Rata Kiri)</label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {[0, 1, 2].map(idx => (
-                  <div key={idx} className="relative h-16 sm:h-20 bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl sm:rounded-2xl flex items-center justify-center overflow-hidden group">
+                  <div key={idx} className="relative h-16 bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl flex items-center justify-center overflow-hidden group">
                     {reportInfo.logos?.[idx] ? (
                       <>
-                        <img src={reportInfo.logos[idx]} className="h-full w-full object-contain p-1 sm:p-2" alt="" />
-                        <button onClick={() => removeLogo(idx)} className="absolute top-1.5 right-1.5 sm:top-2 sm:right-2 bg-red-500 text-white rounded-md sm:rounded-lg p-1 sm:p-1.5 shadow-md opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"><Trash2 size={12}/></button>
+                        <img src={reportInfo.logos[idx]} className="h-full w-full object-contain p-1" alt="" />
+                        <button onClick={() => removeLogo(idx)} className="absolute top-1.5 right-1.5 bg-red-500 text-white rounded-md p-1 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={12}/></button>
                       </>
                     ) : (
                       <label className="cursor-pointer flex flex-col items-center justify-center w-full h-full text-slate-400 hover:bg-slate-100 transition-all">
-                        <Upload size={14} className="mb-0.5 sm:mb-1 sm:w-4 sm:h-4" />
-                        <span className="text-[7px] sm:text-[8px] font-black uppercase">Logo {idx === 0 ? 'Kiri' : idx === 1 ? 'Tengah' : 'Kanan'}</span>
+                        <Upload size={14} className="mb-0.5" /><span className="text-[7px] font-black uppercase">Slot {idx+1}</span>
                         <input type="file" accept="image/*" className="hidden" onChange={(e) => handleLogoUpload(idx, e)} />
                       </label>
                     )}
@@ -1501,129 +1305,63 @@ const App = () => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 uppercase">
               <div className="md:col-span-2">
-                <label className="text-[9px] sm:text-[10px] font-black text-slate-400 tracking-widest ml-2">Judul Laporan</label>
-                <input type="text" value={reportInfo.title} onChange={e => setReportInfo({...reportInfo, title: e.target.value})} className="w-full p-3.5 sm:p-4 bg-slate-50 border-2 border-transparent rounded-2xl sm:rounded-3xl font-black text-slate-800 focus:border-blue-500 outline-none transition-all shadow-inner text-sm" />
+                <label className="text-[9px] font-black text-slate-400 ml-2">Judul Laporan</label>
+                <input type="text" value={reportInfo.title} onChange={e => setReportInfo({...reportInfo, title: e.target.value})} className="w-full p-3.5 bg-slate-50 border-2 border-transparent rounded-2xl font-black text-slate-800 focus:border-blue-500 outline-none transition-all shadow-inner text-sm" />
               </div>
               
-              {/* KOLOM KUSTOM (BISA DIEDIT/DIHAPUS/DITAMBAH) */}
               {(reportInfo.customMeta || []).map((meta, idx) => (
                 <div key={meta.id} className={`${idx === 0 ? 'md:col-span-2' : ''} group relative`}>
                   <div className="flex items-center justify-between mb-1 ml-2 pr-2">
-                    <input 
-                      type="text" 
-                      value={meta.label} 
-                      onChange={e => {
-                        const newMeta = [...reportInfo.customMeta];
-                        newMeta[idx].label = e.target.value;
-                        setReportInfo({...reportInfo, customMeta: newMeta});
-                      }}
-                      className="text-[9px] sm:text-[10px] font-black text-blue-600 tracking-widest uppercase bg-transparent outline-none border-b border-dashed border-blue-300 focus:border-blue-600 w-2/3 transition-all"
-                      placeholder="NAMA KOLOM..."
-                    />
-                    <button 
-                      onClick={() => {
-                        const newMeta = reportInfo.customMeta.filter(m => m.id !== meta.id);
-                        setReportInfo({...reportInfo, customMeta: newMeta});
-                      }} 
-                      className="text-[9px] text-red-400 hover:text-red-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity bg-red-50 px-2 py-0.5 rounded"
-                    >
-                      HAPUS
-                    </button>
+                    <input type="text" value={meta.label} onChange={e => {
+                        const newMeta = [...reportInfo.customMeta]; newMeta[idx].label = e.target.value; setReportInfo({...reportInfo, customMeta: newMeta});
+                      }} className="text-[9px] font-black text-blue-600 uppercase bg-transparent outline-none border-b border-dashed border-blue-300 w-2/3" />
+                    <button onClick={() => {
+                        const newMeta = reportInfo.customMeta.filter(m => m.id !== meta.id); setReportInfo({...reportInfo, customMeta: newMeta});
+                      }} className="text-[9px] text-red-400 font-bold opacity-0 group-hover:opacity-100 bg-red-50 px-2 py-0.5 rounded">HAPUS</button>
                   </div>
-                  <input 
-                    type="text" 
-                    value={meta.value} 
-                    onChange={e => {
-                      const newMeta = [...reportInfo.customMeta];
-                      newMeta[idx].value = e.target.value;
-                      setReportInfo({...reportInfo, customMeta: newMeta});
-                    }} 
-                    className="w-full p-3.5 sm:p-4 bg-slate-50 border-2 border-transparent rounded-2xl sm:rounded-3xl font-black text-slate-800 focus:border-blue-500 outline-none transition-all shadow-inner text-sm" 
-                  />
+                  <input type="text" value={meta.value} onChange={e => {
+                      const newMeta = [...reportInfo.customMeta]; newMeta[idx].value = e.target.value; setReportInfo({...reportInfo, customMeta: newMeta});
+                    }} className="w-full p-3.5 bg-slate-50 border-2 border-transparent rounded-2xl font-black text-slate-800 focus:border-blue-500 outline-none shadow-inner text-sm" />
                 </div>
               ))}
 
-              <div className="md:col-span-2 flex justify-start items-center mt-1 mb-2">
-                <button 
-                  onClick={() => {
-                    const newMeta = [...(reportInfo.customMeta || []), { id: `m${Date.now()}`, label: 'KOLOM BARU', value: '' }];
-                    setReportInfo({...reportInfo, customMeta: newMeta});
-                  }} 
-                  className="bg-blue-50 hover:bg-blue-100 text-blue-600 text-[9px] sm:text-[10px] font-black uppercase tracking-widest py-2.5 px-4 rounded-xl transition-all flex items-center gap-1.5"
-                >
-                  <Plus size={14}/> Tambah Info
-                </button>
+              <div className="md:col-span-2 mt-1 mb-2">
+                <button onClick={() => setReportInfo({...reportInfo, customMeta: [...(reportInfo.customMeta || []), { id: `m${Date.now()}`, label: 'KOLOM BARU', value: '' }]})} className="bg-blue-50 text-blue-600 text-[9px] font-black uppercase py-2 px-4 rounded-xl transition-all flex items-center gap-1.5"><Plus size={14}/> Tambah Info</button>
               </div>
 
-              {/* TAHUN TETAP */}
               <div className="md:col-span-2">
-                <label className="text-[9px] sm:text-[10px] font-black text-slate-400 tracking-widest ml-2 block mb-1 uppercase">Tahun (Tetap)</label>
-                <input type="text" value={reportInfo.date} onChange={e => setReportInfo({...reportInfo, date: e.target.value})} className="w-full p-3.5 sm:p-4 bg-slate-50 border-2 border-transparent rounded-2xl sm:rounded-3xl font-black text-slate-800 focus:border-blue-500 outline-none transition-all shadow-inner text-sm" />
+                <label className="text-[9px] font-black text-slate-400 ml-2 block mb-1">Tahun (Tetap)</label>
+                <input type="text" value={reportInfo.date} onChange={e => setReportInfo({...reportInfo, date: e.target.value})} className="w-full p-3.5 bg-slate-50 border-2 border-transparent rounded-2xl font-black text-slate-800 outline-none shadow-inner text-sm" />
               </div>
 
-              {/* TEMA TAMPILAN (TEMPLATE SELECTION) */}
               <div className="md:col-span-2 mt-4 pt-4 border-t border-slate-100">
-                <label className="text-[9px] sm:text-[10px] font-black text-blue-500 tracking-widest ml-2 flex items-center gap-1.5 mb-2"><Palette size={14} /> TEMA TAMPILAN PDF</label>
-                <div className="flex gap-2 sm:gap-3 bg-slate-50 p-2 rounded-2xl sm:rounded-3xl shadow-inner border border-slate-200 overflow-x-auto">
-                   <button 
-                      onClick={() => setReportInfo({...reportInfo, template: 'klasik'})} 
-                      className={`min-w-[90px] flex-1 py-3 sm:py-3.5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-black transition-all ${(!reportInfo.template || reportInfo.template === 'klasik') ? 'bg-white shadow-md text-blue-600 border border-blue-200' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}
-                   >
-                     Klasik
-                   </button>
-                   <button 
-                      onClick={() => setReportInfo({...reportInfo, template: 'modern'})} 
-                      className={`min-w-[90px] flex-1 py-3 sm:py-3.5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-black transition-all ${reportInfo.template === 'modern' ? 'bg-indigo-600 shadow-md text-white border border-indigo-700' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}
-                   >
-                     Modern
-                   </button>
-                   <button 
-                      onClick={() => setReportInfo({...reportInfo, template: 'inspeksi'})} 
-                      className={`min-w-[100px] flex-1 py-3 sm:py-3.5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-black transition-all ${reportInfo.template === 'inspeksi' ? 'bg-[#1e3a8a] shadow-md text-white border border-[#1e3a8a]' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}
-                   >
-                     Format Inspeksi
-                   </button>
+                <label className="text-[9px] font-black text-blue-500 ml-2 flex items-center gap-1.5 mb-2"><Palette size={14} /> TEMA TAMPILAN PDF</label>
+                <div className="flex gap-2 bg-slate-50 p-2 rounded-2xl shadow-inner border border-slate-200 overflow-x-auto">
+                   {['klasik', 'modern', 'inspeksi'].map(t => (
+                     <button key={t} onClick={() => setReportInfo({...reportInfo, template: t})} className={`min-w-[90px] flex-1 py-3 rounded-xl text-[10px] font-black capitalize transition-all ${reportInfo.template === t ? 'bg-white shadow-md text-blue-600 border border-blue-200' : 'text-slate-400'}`}>{t}</button>
+                   ))}
                 </div>
               </div>
             </div>
 
-            <div className="flex flex-col lg:flex-row items-center gap-4 sm:gap-6 bg-slate-900 rounded-[24px] sm:rounded-[32px] p-4 sm:p-5 text-white mt-8 sm:mt-10 shadow-xl border border-white/5 w-full">
+            <div className="flex flex-col lg:flex-row items-center gap-4 bg-slate-900 rounded-[24px] p-4 text-white mt-8 shadow-xl border border-white/5 w-full">
                <div className="flex items-center justify-between w-full lg:w-max shrink-0">
-                 <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} className="p-2.5 sm:p-3 bg-white/10 rounded-xl sm:rounded-2xl hover:bg-white/20 transition-all active:scale-90"><ChevronLeft size={20} className="sm:w-6 sm:h-6"/></button>
-                 <span className="font-black text-lg sm:text-xl tracking-tighter mx-4 whitespace-nowrap">{currentPage} <span className="text-slate-500 text-xs sm:text-sm">/</span> {pages.length}</span>
-                 <button onClick={() => setCurrentPage(p => Math.min(pages.length, p + 1))} className="p-2.5 sm:p-3 bg-white/10 rounded-xl sm:rounded-2xl hover:bg-white/20 transition-all active:scale-90"><ChevronRight size={20} className="sm:w-6 sm:h-6"/></button>
+                 <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} className="p-2.5 bg-white/10 rounded-xl"><ChevronLeft size={20}/></button>
+                 <span className="font-black text-lg mx-4 whitespace-nowrap">{currentPage} / {pages.length}</span>
+                 <button onClick={() => setCurrentPage(p => Math.min(pages.length, p + 1))} className="p-2.5 bg-white/10 rounded-xl"><ChevronRight size={20}/></button>
                </div>
-               <div className="flex gap-2 sm:gap-3 w-full lg:w-auto flex-wrap justify-center lg:justify-end lg:ml-auto">
-                 {pages.length > 1 && (
-                   <button onClick={() => setShowDeletePageModal(true)} className="flex-1 sm:flex-none bg-red-600 hover:bg-red-500 text-white px-3 sm:px-4 py-3 sm:py-3.5 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black uppercase flex items-center justify-center gap-1.5 sm:gap-2 shadow-md transition-all active:scale-95 whitespace-nowrap">
-                     <Trash2 size={14} className="sm:w-4 sm:h-4"/> HAPUS HAL
-                   </button>
-                 )}
-                 <button onClick={executeDeleteAllPhotos} className="flex-1 sm:flex-none bg-orange-500 hover:bg-orange-400 text-white px-3 sm:px-4 py-3 sm:py-3.5 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black uppercase flex items-center justify-center gap-1.5 sm:gap-2 shadow-md transition-all active:scale-95 whitespace-nowrap">
-                   KOSONGKAN
-                 </button>
-                 <label className="flex-1 sm:flex-none bg-white text-slate-900 px-3 sm:px-5 py-3 sm:py-3.5 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black uppercase cursor-pointer flex items-center justify-center gap-1.5 sm:gap-3 transition-all active:scale-95 shadow-md whitespace-nowrap">
-                   <Upload size={14} className="sm:w-4 sm:h-4 text-blue-600"/> MEGA UPLOAD
-                   <input type="file" multiple accept="image/*" className="hidden" onChange={handleMegaUpload} />
-                 </label>
-                 <button onClick={handleAddPage} className={`w-full sm:w-auto flex-1 sm:flex-none text-white px-4 sm:px-6 py-3 sm:py-3.5 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black uppercase transition-all active:scale-95 shadow-lg whitespace-nowrap ${reportType === 'progres' ? 'bg-emerald-600' : 'bg-blue-600'}`}>+ HAL halaman BARU</button>
+               <div className="flex gap-2 w-full lg:justify-end lg:ml-auto flex-wrap">
+                 {pages.length > 1 && <button onClick={() => setShowDeletePageModal(true)} className="flex-1 sm:flex-none bg-red-600 text-white px-3 py-3 rounded-xl text-[9px] font-black uppercase">HAPUS HAL</button>}
+                 <button onClick={executeDeleteAllPhotos} className="flex-1 sm:flex-none bg-orange-500 text-white px-3 py-3 rounded-xl text-[9px] font-black uppercase">KOSONGKAN</button>
+                 <label className="flex-1 sm:flex-none bg-white text-slate-900 px-3 py-3 rounded-xl text-[9px] font-black uppercase cursor-pointer flex items-center justify-center gap-1.5"><Upload size={14}/> MEGA UPLOAD<input type="file" multiple accept="image/*" className="hidden" onChange={handleMegaUpload} /></label>
+                 <button onClick={handleAddPage} className={`w-full sm:w-auto flex-1 text-white px-4 py-3 rounded-xl text-[9px] font-black uppercase ${reportType === 'progres' ? 'bg-emerald-600' : 'bg-blue-600'}`}>+ HALAMAN BARU</button>
                </div>
             </div>
           </section>
 
           <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
             {activePageData.map((p, i) => (
-              <PhotoCard 
-                key={`${currentPage}-${i}`} 
-                pIdx={currentPage-1} 
-                sIdx={i} 
-                p={p} 
-                reportType={reportType} 
-                updatePhoto={(k, v) => updateSpecificPhoto(currentPage-1, i, k, v)} 
-                clearPhoto={() => clearSpecificPhoto(currentPage-1, i)} 
-                handleFileUpload={(e) => handleFileUpload(currentPage-1, i, e)} 
-                showToast={(msg, type) => setStatusMsg({text: msg, type})}
-              />
+              <PhotoCard key={`${currentPage}-${i}`} pIdx={currentPage-1} sIdx={i} p={p} reportType={reportType} updatePhoto={(k, v) => updateSpecificPhoto(currentPage-1, i, k, v)} clearPhoto={() => clearSpecificPhoto(currentPage-1, i)} handleFileUpload={(e) => handleFileUpload(currentPage-1, i, e)} />
             ))}
           </section>
         </main>
@@ -1631,143 +1369,93 @@ const App = () => {
 
       {view === 'preview' && (
         <main className="w-full flex flex-col items-center bg-slate-200/50 min-h-screen relative overflow-x-hidden">
-          
-          <div className="sticky top-2 sm:top-4 z-40 bg-slate-900/80 backdrop-blur-xl px-5 py-3 rounded-full flex items-center gap-5 shadow-[0_10px_40px_rgba(0,0,0,0.3)] text-white mt-2 sm:mt-4 mb-4 border border-white/20 transition-all hover:bg-slate-900">
-            <button onClick={() => setPreviewZoom(z => Math.max(0.3, z - 0.1))} className="p-1 hover:text-blue-400 active:scale-90 transition-all"><ZoomOut size={18}/></button>
+          <div className="sticky top-2 z-40 bg-slate-900/80 backdrop-blur-xl px-5 py-3 rounded-full flex items-center gap-5 shadow-2xl text-white mt-4 mb-4 border border-white/20 transition-all">
+            <button onClick={() => setPreviewZoom(z => Math.max(0.3, z - 0.1))} className="p-1"><ZoomOut size={18}/></button>
             <span className="text-[10px] font-black w-8 text-center">{Math.round(previewZoom * 100)}%</span>
-            <button onClick={() => setPreviewZoom(z => Math.min(2, z + 0.1))} className="p-1 hover:text-blue-400 active:scale-90 transition-all"><ZoomIn size={18}/></button>
+            <button onClick={() => setPreviewZoom(z => Math.min(2, z + 0.1))} className="p-1"><ZoomIn size={18}/></button>
             <div className="w-px h-4 bg-white/30"></div>
-            <button onClick={() => setPreviewZoom(window.innerWidth < 850 ? (window.innerWidth - 20) / 794 : 1)} className="p-1 hover:text-blue-400 active:scale-90 transition-all text-[10px] font-black tracking-widest flex items-center gap-1.5"><Maximize size={14}/> FIT</button>
+            <button onClick={() => setPreviewZoom(window.innerWidth < 850 ? (window.innerWidth - 20) / 794 : 1)} className="p-1 text-[10px] font-black flex items-center gap-1.5"><Maximize size={14}/> FIT</button>
           </div>
-
-          <div 
-             className="flex flex-col items-center gap-10 py-4 transition-transform duration-300 origin-top" 
-             style={{ transform: `scale(${previewZoom})`, width: '210mm', marginBottom: `${(previewZoom - 1) * pages.length * 1122}px` }}
-          >
+          <div className="flex flex-col items-center gap-10 py-4 transition-transform duration-300 origin-top" style={{ transform: `scale(${previewZoom})`, width: '210mm', marginBottom: `${(previewZoom - 1) * pages.length * 1122}px` }}>
             {pages.map((p, i) => <ReportPage key={`preview-${i}`} data={p} />)}
           </div>
         </main>
       )}
 
-      {/* --- HIDDEN PDF RENDER AREA --- */}
       <div style={{ height: 0, overflow: 'hidden', position: 'absolute', top: 0, left: 0, pointerEvents: 'none', zIndex: -1 }}>
          <div id="pdf-render-area" style={{ width: '210mm', backgroundColor: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
            {(bakedPages || pages).map((p, i) => <ReportPage key={`render-${i}`} data={p} isFinal={true} />)}
          </div>
       </div>
 
-      {/* --- MODAL PENGINGAT BACKUP (SMART REMINDER) --- */}
       {showReminderModal && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-[24px] sm:rounded-[32px] p-6 sm:p-8 max-w-md w-full shadow-2xl animate-in zoom-in-95 border-2 border-orange-100">
-            <div className="flex items-center gap-3 sm:gap-4 text-orange-500 mb-4">
-              <div className="bg-orange-100 p-2 sm:p-3 rounded-full">
-                <HardDrive size={24} className="sm:w-7 sm:h-7 text-orange-600" />
-              </div>
-              <h3 className="text-lg sm:text-xl font-black uppercase tracking-widest">Pengingat Backup</h3>
-            </div>
-            
-            <p className="text-slate-600 font-medium mb-6 sm:mb-8 text-xs sm:text-sm leading-relaxed">
-              Sangat disarankan untuk mengunduh <strong>File Mentahan (.json)</strong> ke perangkat Anda sebagai cadangan sebelum <strong className="text-slate-800">{pendingAction === 'logout' ? 'keluar dari aplikasi' : 'kembali ke arsip'}</strong>. File ini dapat dibuka kapan saja meskipun internet terputus.
-            </p>
-            
-            <div className="flex flex-col gap-2.5 sm:gap-3">
-              <button 
-                onClick={saveMentahanAndProceed} 
-                className="w-full py-3.5 sm:py-4 font-black bg-blue-600 text-white rounded-xl sm:rounded-2xl uppercase text-[10px] sm:text-xs shadow-lg shadow-blue-500/30 active:scale-95 transition-all flex justify-center items-center gap-2"
-              >
-                <HardDrive size={16} /> Simpan Mentahan & Lanjutkan
-              </button>
-              
-              <div className="flex gap-2.5 sm:gap-3">
-                <button 
-                  onClick={() => { setShowReminderModal(false); setPendingAction(null); }} 
-                  className="flex-1 py-3 sm:py-3.5 font-black bg-slate-100 text-slate-500 rounded-xl sm:rounded-2xl uppercase text-[10px] sm:text-xs hover:bg-slate-200 active:scale-95 transition-all"
-                >
-                  Batal
-                </button>
-                <button 
-                  onClick={executePendingAction} 
-                  className="flex-1 py-3 sm:py-3.5 font-black bg-white border-2 border-slate-200 text-slate-400 hover:border-red-200 hover:text-red-500 hover:bg-red-50 rounded-xl sm:rounded-2xl uppercase text-[10px] sm:text-xs active:scale-95 transition-all"
-                >
-                  Abaikan Saja
-                </button>
+          <div className="bg-white rounded-[24px] p-6 sm:p-8 max-w-md w-full shadow-2xl animate-in zoom-in-95 border-2 border-orange-100">
+            <div className="flex items-center gap-3 text-orange-500 mb-4"><div className="bg-orange-100 p-2 rounded-full"><HardDrive size={24} /></div><h3 className="text-lg font-black uppercase tracking-widest">Pengingat Backup</h3></div>
+            <p className="text-slate-600 font-medium mb-6 text-xs sm:text-sm leading-relaxed">Disarankan mengunduh <strong>File Mentahan (.json)</strong> sebelum {pendingAction === 'logout' ? 'keluar' : 'kembali'}. File ini bisa dibuka kapan pun.</p>
+            <div className="flex flex-col gap-2.5">
+              <button onClick={saveMentahanAndProceed} className="w-full py-3.5 font-black bg-blue-600 text-white rounded-xl uppercase text-[10px] shadow-lg flex justify-center items-center gap-2"><HardDrive size={16} /> Simpan Mentahan & Lanjut</button>
+              <div className="flex gap-2.5">
+                <button onClick={() => { setShowReminderModal(false); setPendingAction(null); }} className="flex-1 py-3 font-black bg-slate-100 text-slate-500 rounded-xl uppercase text-[10px]">Batal</button>
+                <button onClick={executePendingAction} className="flex-1 py-3 font-black bg-white border-2 border-slate-200 text-slate-400 rounded-xl uppercase text-[10px]">Abaikan</button>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* --- MODAL HAPUS PROYEK --- */}
       {showDeleteProjectModal.show && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-[24px] sm:rounded-3xl p-6 sm:p-8 max-w-sm w-full shadow-2xl animate-in zoom-in-95">
-            <div className="flex items-center gap-3 sm:gap-4 text-red-600 mb-4"><ShieldAlert size={28} className="sm:w-8 sm:h-8"/><h3 className="text-lg sm:text-xl font-black uppercase tracking-widest">Hapus Proyek</h3></div>
-            <p className="text-slate-600 font-medium mb-6 sm:mb-8 text-xs sm:text-sm">Hapus laporan <strong>{showDeleteProjectModal.project?.reportInfo?.title}</strong> dari Cloud?</p>
-            <div className="flex gap-3 sm:gap-4">
-              <button onClick={() => setShowDeleteProjectModal({show: false, project: null})} className="flex-1 py-3 sm:py-3.5 font-black bg-slate-100 rounded-xl sm:rounded-2xl uppercase text-[10px] sm:text-xs active:scale-95 transition-all text-slate-500">Batal</button>
-              <button onClick={executeDeleteProject} className="flex-1 py-3 sm:py-3.5 font-black bg-red-600 text-white rounded-xl sm:rounded-2xl uppercase text-[10px] sm:text-xs shadow-lg active:scale-95 transition-all">Hapus Total</button>
+          <div className="bg-white rounded-[24px] p-6 max-w-sm w-full shadow-2xl animate-in zoom-in-95">
+            <div className="flex items-center gap-3 text-red-600 mb-4"><ShieldAlert size={28}/><h3 className="text-lg font-black uppercase tracking-widest">Hapus Proyek</h3></div>
+            <p className="text-slate-600 mb-6 text-xs sm:text-sm">Hapus laporan dari Cloud?</p>
+            <div className="flex gap-3">
+              <button onClick={() => setShowDeleteProjectModal({show: false, project: null})} className="flex-1 py-3 font-black bg-slate-100 rounded-xl uppercase text-[10px] text-slate-500">Batal</button>
+              <button onClick={executeDeleteProject} className="flex-1 py-3 font-black bg-red-600 text-white rounded-xl uppercase text-[10px]">Hapus Total</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* --- MODAL HAPUS HALAMAN --- */}
       {showDeletePageModal && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-[24px] sm:rounded-3xl p-6 sm:p-8 max-w-sm w-full shadow-2xl animate-in zoom-in-95">
-            <div className="flex items-center gap-3 sm:gap-4 text-red-600 mb-4"><Trash2 size={28} className="sm:w-8 sm:h-8"/><h3 className="text-lg sm:text-xl font-black uppercase tracking-widest">Hapus Halaman</h3></div>
-            <p className="text-slate-600 font-medium mb-6 sm:mb-8 text-xs sm:text-sm">Apakah Anda yakin ingin menghapus <strong>Halaman {currentPage}</strong> beserta seluruh isinya?</p>
-            <div className="flex gap-3 sm:gap-4">
-              <button onClick={() => setShowDeletePageModal(false)} className="flex-1 py-3 sm:py-3.5 font-black bg-slate-100 rounded-xl sm:rounded-2xl uppercase text-[10px] sm:text-xs active:scale-95 transition-all text-slate-500">Batal</button>
-              <button onClick={executeDeletePage} className="flex-1 py-3 sm:py-3.5 font-black bg-red-600 text-white rounded-xl sm:rounded-2xl uppercase text-[10px] sm:text-xs shadow-lg active:scale-95 transition-all">Hapus Halaman</button>
+          <div className="bg-white rounded-[24px] p-6 max-w-sm w-full shadow-2xl animate-in zoom-in-95">
+            <div className="flex items-center gap-3 text-red-600 mb-4"><Trash2 size={28}/><h3 className="text-lg font-black uppercase tracking-widest">Hapus Halaman</h3></div>
+            <p className="text-slate-600 mb-6 text-xs sm:text-sm">Hapus <strong>Halaman {currentPage}</strong>?</p>
+            <div className="flex gap-3">
+              <button onClick={() => setShowDeletePageModal(false)} className="flex-1 py-3 font-black bg-slate-100 rounded-xl uppercase text-[10px] text-slate-500">Batal</button>
+              <button onClick={executeDeletePage} className="flex-1 py-3 font-black bg-red-600 text-white rounded-xl uppercase text-[10px]">Hapus</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* --- MODAL KELOLA AKSES --- */}
       {showAccessModal && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-[24px] sm:rounded-[32px] p-6 sm:p-8 max-w-lg w-full shadow-2xl animate-in zoom-in-95 flex flex-col max-h-[90vh]">
-            <div className="flex items-center justify-between mb-4 sm:mb-6 border-b border-slate-100 pb-3 sm:pb-4"><div className="flex items-center gap-2 sm:gap-3 text-slate-800"><ShieldAlert size={24} className="sm:w-7 sm:h-7 text-blue-600" /><h3 className="text-lg sm:text-xl font-black uppercase tracking-widest">Kelola Akses</h3></div></div>
-            
-            <div className="mb-4 sm:mb-6 bg-slate-50 p-3 sm:p-4 rounded-2xl sm:rounded-3xl border border-slate-200">
-              <label className="block text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 sm:mb-2 ml-1 sm:ml-2">Tambah Email Baru</label>
-              <div className="flex gap-2"><input type="email" value={newEmailUser} onChange={(e) => setNewEmailUser(e.target.value)} placeholder="email@proyek.com" className="flex-1 px-3 py-2.5 sm:px-4 sm:py-3 bg-white border border-slate-200 rounded-xl sm:rounded-2xl text-xs sm:text-sm outline-none" /></div>
-              <div className="flex items-center justify-between mt-2.5 sm:mt-3 px-1 sm:px-2">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={newEmailAdmin} onChange={e => setNewEmailAdmin(e.target.checked)} className="w-3.5 h-3.5 sm:w-4 sm:h-4 accent-blue-600" />
-                  <span className="text-[10px] sm:text-xs font-bold text-slate-600">Jadikan Admin</span>
-                </label>
-                <button onClick={handleAddNewEmail} className="bg-blue-600 text-white px-4 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-[9px] sm:text-xs font-black uppercase transition-all shadow-md">Tambah</button>
+          <div className="bg-white rounded-[24px] p-6 max-w-lg w-full shadow-2xl animate-in zoom-in-95 flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3"><div className="flex items-center gap-2 text-slate-800"><ShieldAlert size={24} className="text-blue-600" /><h3 className="text-lg font-black uppercase tracking-widest">Kelola Akses</h3></div></div>
+            <div className="mb-4 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+              <label className="block text-[9px] font-black text-slate-500 uppercase mb-1.5 ml-1">Tambah Email Baru</label>
+              <div className="flex gap-2"><input type="email" value={newEmailUser} onChange={(e) => setNewEmailUser(e.target.value)} placeholder="email@proyek.com" className="flex-1 px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs outline-none" /></div>
+              <div className="flex items-center justify-between mt-2.5 px-1">
+                <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={newEmailAdmin} onChange={e => setNewEmailAdmin(e.target.checked)} className="w-3.5 h-3.5 accent-blue-600" /><span className="text-[10px] font-bold text-slate-600">Jadikan Admin</span></label>
+                <button onClick={handleAddNewEmail} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-[9px] font-black uppercase shadow-md">Tambah</button>
               </div>
             </div>
-            
-            <div className="flex-1 overflow-y-auto pr-1 sm:pr-2 space-y-1.5 sm:space-y-2 mb-3 sm:mb-4">
-              <label className="block text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 sm:mb-3 ml-1 sm:ml-2">Daftar Terdaftar</label>
-              {currentAllowed.map((em, idx) => {
-                const isDAdmin = currentAdmins.includes(em);
-                const isBawaan = DEFAULT_EMAIL_IZIN.includes(em.toLowerCase());
-                return (
-                  <div key={idx} className="flex items-center justify-between bg-slate-50 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl sm:rounded-2xl border border-slate-200">
-                    <div className="flex items-center gap-2 sm:gap-3 overflow-hidden">
-                       <div className={`p-1.5 sm:p-2 rounded-lg sm:rounded-xl shrink-0 ${isDAdmin ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-200 text-slate-500'}`}><User size={14} className="sm:w-4 sm:h-4"/></div>
-                       <div className="flex flex-col truncate">
-                         <span className="text-[10px] sm:text-xs font-bold text-slate-700 truncate">{em}</span>
-                         <span className="text-[8px] sm:text-[9px] font-black uppercase text-slate-400">{isDAdmin ? 'Administrator' : 'Pengguna Biasa'} {isBawaan && '(Bawaan)'}</span>
-                       </div>
-                    </div>
-                    {!isBawaan && em !== activeEmail && (
-                      <button onClick={() => handleRemoveAccessEmail(em)} className="text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 sm:p-2 rounded-lg sm:rounded-xl transition-all shrink-0"><Trash2 size={14} className="sm:w-[18px] sm:h-[18px]"/></button>
-                    )}
+            <div className="flex-1 overflow-y-auto space-y-1.5 mb-3">
+              {currentAllowed.map((em, idx) => (
+                <div key={idx} className="flex items-center justify-between bg-slate-50 px-3 py-2 rounded-xl border border-slate-200">
+                  <div className="flex items-center gap-2 overflow-hidden">
+                     <div className={`p-1.5 rounded-lg ${currentAdmins.includes(em) ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-200 text-slate-500'}`}><User size={14}/></div>
+                     <div className="flex flex-col truncate"><span className="text-[10px] font-bold text-slate-700 truncate">{em}</span><span className="text-[8px] font-black uppercase text-slate-400">{currentAdmins.includes(em) ? 'Administrator' : 'Pengguna Biasa'}</span></div>
                   </div>
-                );
-              })}
+                  {!DEFAULT_EMAIL_IZIN.includes(em.toLowerCase()) && em !== activeEmail && (
+                    <button onClick={() => handleRemoveAccessEmail(em)} className="text-red-400 hover:text-red-600 p-1.5 transition-all"><Trash2 size={14}/></button>
+                  )}
+                </div>
+              ))}
             </div>
-            <div className="pt-3 sm:pt-4 border-t border-slate-100">
-                <button onClick={() => setShowAccessModal(false)} className="w-full px-4 sm:px-5 py-3 sm:py-4 rounded-xl sm:rounded-2xl font-black text-[10px] sm:text-xs uppercase text-slate-500 bg-slate-100 hover:bg-slate-200 active:scale-95 transition-all">Tutup Jendela Ini</button>
-            </div>
+            <div className="pt-3 border-t border-slate-100"><button onClick={() => setShowAccessModal(false)} className="w-full py-3 rounded-xl font-black text-[10px] uppercase text-slate-500 bg-slate-100 hover:bg-slate-200">Tutup</button></div>
           </div>
         </div>
       )}
