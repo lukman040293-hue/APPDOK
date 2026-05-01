@@ -256,7 +256,7 @@ const App = () => {
   const triggerOfflineMode = () => {
     setIsOfflineMode(prev => {
         if (!prev) {
-            setStatusMsg({ text: 'KUOTA PENUH! Mode Lokal Aktif.', type: 'error' });
+            setStatusMsg({ text: 'Gagal Konek! Mode Lokal Aktif.', type: 'error' });
             setTimeout(() => setStatusMsg({ text: '', type: '' }), 4000);
             return true;
         }
@@ -621,7 +621,7 @@ const App = () => {
   }, [view]);
 
   // =========================================================================
-  // FUNGSI PENYIMPANAN PARALEL (Diperbaiki dari Masalah Race Condition)
+  // FUNGSI PENYIMPANAN SUPER HEMAT KUOTA & ATOMIC (Mencegah Ghost File)
   // =========================================================================
   const saveToCloudNow = async (id, info, pagesObj, type, emailToSave, timeToSave) => {
     if (!user || !id) return Promise.resolve(false);
@@ -634,74 +634,12 @@ const App = () => {
     try {
       setSaveStatus('saving');
       
-      const isPageBlank = (pageData) => !pageData || pageData.every(p => !p.src && (!p.note || p.note.trim() === ''));
-
-      const uploadTasks = [];
-      const deleteTasks = [];
-
-      // 1. SIAPKAN TUGAS UNTUK MENGUNGGAH / MENGHAPUS HALAMAN
-      for (let i = 0; i < pagesObj.umum.length; i++) {
-         const currentStr = JSON.stringify(pagesObj.umum[i]);
-         if (lastSavedHashRef.current[`${id}_umum_${i}`] !== currentStr) {
-             const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_umum_page_${i}`);
-             if (isPageBlank(pagesObj.umum[i])) {
-                 deleteTasks.push(() => deleteDoc(pageRef).catch(()=>{}));
-                 lastSavedHashRef.current[`${id}_umum_${i}`] = currentStr;
-             } else {
-                 uploadTasks.push(() => setDoc(pageRef, { index: i, projectId: id, type: 'umum', data: pagesObj.umum[i] }).then(() => {
-                     lastSavedHashRef.current[`${id}_umum_${i}`] = currentStr;
-                 }));
-             }
-         }
-      }
+      const batch = writeBatch(db);
+      let opsCount = 0;
       
-      // Bersihkan sisa halaman yang dihapus
-      for(let i = pagesObj.umum.length; i < 50; i++) {
-         if (lastSavedHashRef.current[`${id}_umum_${i}`]) {
-            delete lastSavedHashRef.current[`${id}_umum_${i}`];
-         }
-         const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_umum_page_${i}`);
-         deleteTasks.push(() => deleteDoc(pageRef).catch(()=>{}));
-      }
-
-      for (let i = 0; i < pagesObj.progres.length; i++) {
-         const currentStr = JSON.stringify(pagesObj.progres[i]);
-         if (lastSavedHashRef.current[`${id}_progres_${i}`] !== currentStr) {
-             const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_progres_page_${i}`);
-             if (isPageBlank(pagesObj.progres[i])) {
-                 deleteTasks.push(() => deleteDoc(pageRef).catch(()=>{}));
-                 lastSavedHashRef.current[`${id}_progres_${i}`] = currentStr;
-             } else {
-                 uploadTasks.push(() => setDoc(pageRef, { index: i, projectId: id, type: 'progres', data: pagesObj.progres[i] }).then(() => {
-                     lastSavedHashRef.current[`${id}_progres_${i}`] = currentStr;
-                 }));
-             }
-         }
-      }
-      
-      // Bersihkan sisa halaman progres yang dihapus
-      for(let i = pagesObj.progres.length; i < 50; i++) {
-         if (lastSavedHashRef.current[`${id}_progres_${i}`]) {
-            delete lastSavedHashRef.current[`${id}_progres_${i}`];
-         }
-         const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_progres_page_${i}`);
-         deleteTasks.push(() => deleteDoc(pageRef).catch(()=>{}));
-      }
-      
-      const executeInChunks = async (tasks, chunkSize) => {
-        for (let i = 0; i < tasks.length; i += chunkSize) {
-          const chunk = tasks.slice(i, i + chunkSize);
-          await Promise.all(chunk.map(task => task()));
-        }
-      };
-
-      // 2. JALANKAN TUGAS HALAMAN TERLEBIH DAHULU (PENTING! Cegah Race Condition)
-      await executeInChunks(uploadTasks, 10); 
-      await executeInChunks(deleteTasks, 20);
-
-      // 3. BARU PERBARUI DOKUMEN PROYEK (Ini akan mentrigger perangkat lain untuk sinkron)
+      // 1. Simpan Informasi Proyek Utama
       const projRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_projects', id);
-      await setDoc(projRef, { 
+      batch.set(projRef, { 
         reportInfo: info, 
         lastActiveTab: type, 
         pageCountUmum: pagesObj.umum.length, 
@@ -710,6 +648,48 @@ const App = () => {
         authorEmail: emailToSave,
         lastSavedBy: TAB_SESSION_ID // Tandai bahwa layar ini yang terakhir menyimpan
       });
+      opsCount++;
+
+      const isPageBlank = (pageData) => !pageData || pageData.every(p => !p.src && (!p.note || p.note.trim() === ''));
+
+      // Fungsi Helper untuk memproses halaman tanpa menguras kuota
+      const processPagesToBatch = (pages, typeStr, oldLength) => {
+          for (let i = 0; i < pages.length; i++) {
+              const currentStr = JSON.stringify(pages[i]);
+              if (lastSavedHashRef.current[`${id}_${typeStr}_${i}`] !== currentStr) {
+                  const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_${typeStr}_page_${i}`);
+                  if (isPageBlank(pages[i])) {
+                      batch.delete(pageRef);
+                  } else {
+                      batch.set(pageRef, { index: i, projectId: id, type: typeStr, data: pages[i] });
+                  }
+                  lastSavedHashRef.current[`${id}_${typeStr}_${i}`] = currentStr;
+                  opsCount++;
+              }
+          }
+          
+          // HANYA menghapus halaman yang benar-benar dibuang (BUKAN membersihkan sampai index ke 50)
+          for (let i = pages.length; i < oldLength; i++) {
+              if (lastSavedHashRef.current[`${id}_${typeStr}_${i}`] !== undefined) {
+                  const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_${typeStr}_page_${i}`);
+                  batch.delete(pageRef);
+                  delete lastSavedHashRef.current[`${id}_${typeStr}_${i}`];
+                  opsCount++;
+              }
+          }
+      };
+
+      const oldUmumLength = lastSavedHashRef.current.umumLength || pagesObj.umum.length;
+      const oldProgresLength = lastSavedHashRef.current.progresLength || pagesObj.progres.length;
+
+      // 2. Eksekusi pengisian data ke dalam kantong Batch
+      processPagesToBatch(pagesObj.umum, 'umum', oldUmumLength);
+      processPagesToBatch(pagesObj.progres, 'progres', oldProgresLength);
+      
+      // 3. Kirim semuanya dalam 1 jaringan (Atomic Write)
+      if (opsCount > 0) {
+          await batch.commit();
+      }
 
       // Mutakhirkan meta hash setelah semua berhasil
       lastSavedHashRef.current.reportInfo = JSON.stringify(info);
@@ -728,7 +708,6 @@ const App = () => {
   };
 
   // --- SMART AUTOSAVE (15 Detik) ---
-  // Hanya akan menembak ke server JIKA BENAR-BENAR ADA PERUBAHAN
   useEffect(() => {
     if (!user || !activeProjectId || view === 'dashboard' || isOfflineMode) return;
     
@@ -854,17 +833,17 @@ const App = () => {
 
     const backgroundDelete = async () => {
         try {
-            await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_projects', proj.id));
-            const deleteTasks = [];
-            for (let i = 0; i < 50; i++) {
-                deleteTasks.push(() => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_page_${i}`)).catch(()=>{}));
-                deleteTasks.push(() => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_umum_page_${i}`)).catch(()=>{}));
-                deleteTasks.push(() => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_progres_page_${i}`)).catch(()=>{}));
-            }
-            for (let i = 0; i < deleteTasks.length; i += 20) {
-                await Promise.all(deleteTasks.slice(i, i + 20).map(task => task()));
-                await new Promise(resolve => setTimeout(resolve, 50));
-            }
+            const batch = writeBatch(db);
+            batch.delete(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_projects', proj.id));
+
+            // Menggunakan Count aktual alih-alih 50 untuk sangat menghemat kuota
+            const uCount = proj.pageCountUmum || 20;
+            const pCount = proj.pageCountProgres || 20;
+
+            for (let i = 0; i < uCount; i++) batch.delete(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_umum_page_${i}`));
+            for (let i = 0; i < pCount; i++) batch.delete(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_progres_page_${i}`));
+
+            await batch.commit();
         } catch (e) {
             console.error("Penghapusan latar belakang selesai dengan peringatan:", e);
         }
@@ -911,7 +890,6 @@ const App = () => {
          return;
       }
       
-      // Jika tidak ada perubahan sejak memori hash terakhir, jangan buang kuota!
       if (!checkHasChanges(activeProjectId, reportInfo, pagesData)) {
           setStatusMsg({ text: 'Sudah Tersimpan!', type: 'success' });
           setTimeout(() => setStatusMsg({ text: '', type: '' }), 1500);
@@ -951,7 +929,6 @@ const App = () => {
     } catch (err) { setIsPdfLoading(false); setStatusMsg({ text: 'Gagal proses', type: 'error' }); }
   };
 
-  // --- PERBAIKAN: IMPORT LIBRARY UNTUK PAGINASI PDF ---
   useEffect(() => {
     const loadScript = (src, id) => new Promise((resolve) => {
       if (document.getElementById(id)) return resolve();
@@ -968,19 +945,14 @@ const App = () => {
     }
   }, [isLibraryReady.pdf]);
 
-  // --- PERBAIKAN: SISTEM RENDER PDF HALAMAN DEMI HALAMAN ---
   useEffect(() => {
     if (shouldTriggerDownload && bakedPages) {
       const generatePDF = async () => {
         const element = document.getElementById('pdf-render-area');
-        
-        // Paginasi: Pastikan gambar-gambar termuat sebelum merender
         const images = element.querySelectorAll('img');
         await Promise.all(Array.from(images).map(img => img.complete ? Promise.resolve() : new Promise(r => img.onload = r)));
-        
         const cleanTitle = reportInfo.title.replace(/ /g, '_');
         
-        // --- PERBAIKAN: Mengisolasi DOM agar tidak bentrok dengan React Re-render ---
         const clonedContainer = document.createElement('div');
         clonedContainer.style.position = 'absolute';
         clonedContainer.style.top = '-10000px';
@@ -993,24 +965,11 @@ const App = () => {
             const doc = new jsPDF('p', 'mm', 'a4');
             const pagesElements = clonedElement.querySelectorAll('.report-page-final');
 
-            // Render setiap halaman satu per satu untuk mencegah crash memori HP
             for (let i = 0; i < pagesElements.length; i++) {
                 setStatusMsg({ text: `Memproses ${i + 1}/${pagesElements.length}...`, type: 'info' });
-                
-                // Jeda agar state React (statusMsg) bisa terupdate tanpa merusak elemen html2canvas
                 await new Promise(r => setTimeout(r, 50));
-
-                const canvas = await window.html2canvas(pagesElements[i], {
-                    scale: 2.5, // Ditingkatkan ke kualitas TINGGI (Sangat tajam, cocok untuk zoom/print)
-                    useCORS: true,
-                    width: 794,
-                    windowWidth: 794,
-                    logging: false
-                });
-                
-                // Kualitas kompresi JPEG dimaksimalkan ke 98% agar artefak kompresi pada foto hilang
+                const canvas = await window.html2canvas(pagesElements[i], { scale: 2.5, useCORS: true, width: 794, windowWidth: 794, logging: false });
                 const imgData = canvas.toDataURL('image/jpeg', 0.98);
-                
                 if (i > 0) doc.addPage();
                 doc.addImage(imgData, 'JPEG', 0, 0, 210, 296.7);
             }
@@ -1032,13 +991,9 @@ const App = () => {
                 setStatusMsg({ text: 'PDF Diunduh!', type: 'success' }); 
             }
         } catch (e) {
-            if (e.name !== 'AbortError') console.error(e);
             setStatusMsg({ text: e.name === 'AbortError' ? 'Batal Dibagikan' : 'Dibatalkan / Selesai', type: 'info' });
         } finally { 
-            // Bersihkan DOM clone dari body
-            if (document.body.contains(clonedContainer)) {
-                document.body.removeChild(clonedContainer);
-            }
+            if (document.body.contains(clonedContainer)) document.body.removeChild(clonedContainer);
             setIsPdfLoading(false); setBakedPages(null); setShouldTriggerDownload(false); 
             setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000); 
         }
@@ -1063,7 +1018,6 @@ const App = () => {
     setStatusMsg({ text: 'Membaca File...', type: 'info' });
     const reader = new FileReader();
     
-    // Proses ini sekarang diubah menjadi asinkronus (menunggu hingga selesai sepenuhnya)
     reader.onload = async (ev) => {
       try {
         const data = JSON.parse(ev.target.result);
@@ -1073,24 +1027,17 @@ const App = () => {
         setActiveProjectId(newId);
         let loadedInfo = data.reportInfo || defaultReportInfo;
         
-        lastSavedHashRef.current = {
-            reportInfo: JSON.stringify(loadedInfo),
-            umumLength: data.pagesData?.umum?.length || 0,
-            progresLength: data.pagesData?.progres?.length || 0
-        }; 
-        
+        lastSavedHashRef.current = { reportInfo: JSON.stringify(loadedInfo), umumLength: data.pagesData?.umum?.length || 0, progresLength: data.pagesData?.progres?.length || 0 }; 
         setReportInfo(loadedInfo); setReportType(data.reportType || 'umum'); setPagesData(data.pagesData);
         setCurrentPage(1); setProjectAuthor(activeEmail); setProjectTime(now); setView('edit');
         
         if (user && !isOfflineMode && !isProjectEmpty(loadedInfo, data.pagesData)) {
             setStatusMsg({ text: 'Sinkronisasi ke Cloud...', type: 'info' });
-            // Menunggu sampai proses sinkronisasi 50 halaman benar-benar selesai
             await saveToCloudNow(newId, loadedInfo, data.pagesData, data.reportType || 'umum', activeEmail, now);
             setStatusMsg({ text: 'Selesai & Tersinkron!', type: 'success' });
         } else {
             setStatusMsg({ text: 'Selesai!', type: 'success' });
         }
-        
         setTimeout(() => setStatusMsg({ text: '', type: '' }), 2500);
       } catch { 
         setStatusMsg({ text: 'File rusak', type: 'error' }); 
