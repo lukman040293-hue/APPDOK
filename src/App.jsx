@@ -1295,49 +1295,6 @@ const App = () => {
                    </div>
                 </div>
               </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 bg-white rounded-[32px] p-6 sm:p-8 border border-slate-200 shadow-sm flex flex-col justify-between">
-                   <div>
-                     <h3 className="text-base sm:text-lg font-black text-slate-800 mb-1 sm:mb-2 flex items-center gap-2"><BarChart3 className="text-blue-500 w-5 h-5 sm:w-6 sm:h-6"/> Aktivitas Pembuatan Laporan</h3>
-                     <p className="text-xs sm:text-sm text-slate-500 font-medium mb-6">Distribusi laporan berdasarkan tema/template yang digunakan.</p>
-                   </div>
-                   
-                   <div className="space-y-4">
-                      <div className="flex items-center gap-3 sm:gap-4">
-                         <div className="w-20 sm:w-24 text-[10px] sm:text-xs font-bold text-slate-500 uppercase">Klasik</div>
-                         <div className="flex-1 h-3 sm:h-4 bg-slate-100 rounded-full overflow-hidden">
-                            <div className="h-full bg-blue-500 rounded-full transition-all duration-1000" style={{width: `${(dashboardStats.templateCounts.klasik / filteredProjects.length) * 100}%`}}></div>
-                         </div>
-                         <div className="w-8 sm:w-12 text-right text-xs sm:text-sm font-black text-slate-700">{dashboardStats.templateCounts.klasik}</div>
-                      </div>
-                      <div className="flex items-center gap-3 sm:gap-4">
-                         <div className="w-20 sm:w-24 text-[10px] sm:text-xs font-bold text-slate-500 uppercase">Modern</div>
-                         <div className="flex-1 h-3 sm:h-4 bg-slate-100 rounded-full overflow-hidden">
-                            <div className="h-full bg-indigo-500 rounded-full transition-all duration-1000" style={{width: `${(dashboardStats.templateCounts.modern / filteredProjects.length) * 100}%`}}></div>
-                         </div>
-                         <div className="w-8 sm:w-12 text-right text-xs sm:text-sm font-black text-slate-700">{dashboardStats.templateCounts.modern}</div>
-                      </div>
-                      <div className="flex items-center gap-3 sm:gap-4">
-                         <div className="w-20 sm:w-24 text-[10px] sm:text-xs font-bold text-slate-500 uppercase">Inspeksi</div>
-                         <div className="flex-1 h-3 sm:h-4 bg-slate-100 rounded-full overflow-hidden">
-                            <div className="h-full bg-[#1e3a8a] rounded-full transition-all duration-1000" style={{width: `${(dashboardStats.templateCounts.inspeksi / filteredProjects.length) * 100}%`}}></div>
-                         </div>
-                         <div className="w-8 sm:w-12 text-right text-xs sm:text-sm font-black text-slate-700">{dashboardStats.templateCounts.inspeksi}</div>
-                      </div>
-                   </div>
-                </div>
-
-                <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-[32px] p-6 sm:p-8 shadow-xl text-white flex flex-col justify-center relative overflow-hidden">
-                   <div className="absolute top-0 right-0 p-8 opacity-10"><PieChart size={120}/></div>
-                   <h3 className="text-xs sm:text-sm font-bold text-slate-300 uppercase tracking-widest mb-2 relative z-10">Rata-rata Volume</h3>
-                   <div className="flex items-end gap-2 relative z-10">
-                      <span className="text-5xl sm:text-6xl font-black">{filteredProjects.length > 0 ? Math.round(dashboardStats.totalPages / filteredProjects.length) : 0}</span>
-                      <span className="text-base sm:text-lg font-bold text-slate-400 mb-1 sm:mb-2">Hal / Laporan</span>
-                   </div>
-                   <p className="text-[10px] sm:text-xs text-slate-400 mt-4 relative z-10">Kepadatan dokumentasi per laporan terpantau stabil.</p>
-                </div>
-              </div>
             </div>
           )}
 
