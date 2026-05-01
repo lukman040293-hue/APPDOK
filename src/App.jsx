@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Camera, Trash2, Image as ImageIcon, Upload, FileDown, Presentation, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle, ShieldAlert, LifeBuoy, Sun, Droplets, Target, ClipboardList, Cloud, FolderOpen, Plus, ArrowLeft, Calendar, Briefcase, FileText, Loader2, WifiOff, HardDrive, UploadCloud, Lock, User, LogOut, ZoomIn, ZoomOut, Maximize, Smartphone, Palette, Filter, Save } from 'lucide-react';
+import { Camera, Trash2, Image as ImageIcon, Upload, FileDown, Presentation, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle, ShieldAlert, LifeBuoy, Sun, Droplets, Target, ClipboardList, Cloud, FolderOpen, Plus, ArrowLeft, Calendar, Briefcase, FileText, Loader2, WifiOff, HardDrive, UploadCloud, Lock, User, LogOut, ZoomIn, ZoomOut, Maximize, Smartphone, Palette, Filter, Save, FileStack, Layers, Activity, BarChart3, PieChart, Users } from 'lucide-react';
 
 // --- MENCEGAH LOG ERROR KUOTA FIREBASE AGAR TIDAK MUNCUL DI LAYAR ---
 const originalConsoleError = console.error;
@@ -269,6 +269,20 @@ const App = () => {
     if (!isAdmin || filterEmail === 'all') return projects;
     return projects.filter(p => p.authorEmail === filterEmail);
   }, [projects, filterEmail, isAdmin]);
+
+  // --- MENGHITUNG STATISTIK DASHBOARD ---
+  const dashboardStats = useMemo(() => {
+    let totalPages = 0;
+    let tCounts = { klasik: 0, modern: 0, inspeksi: 0 };
+    filteredProjects.forEach(p => {
+      // Hanya menghitung tab terakhir yang aktif sebagai indikator halaman
+      const pagesInProject = p.lastActiveTab === 'progres' ? (p.pageCountProgres || 1) : (p.pageCountUmum || p.pageCount || 1);
+      totalPages += pagesInProject;
+      const t = p.reportInfo?.template || 'klasik';
+      if (tCounts[t] !== undefined) tCounts[t]++;
+    });
+    return { totalPages, templateCounts: tCounts };
+  }, [filteredProjects]);
 
   useEffect(() => {
     document.title = "Aplikasi Dokumentasi"; 
@@ -695,7 +709,6 @@ const App = () => {
     }
   };
 
-  // --- FUNGSI TRIGGER CETAK PDF ---
   const triggerPdfBaking = async () => {
     setIsPdfLoading(true); setStatusMsg({ text: 'Menyiapkan PDF...', type: 'info' });
     try {
@@ -1170,6 +1183,15 @@ const App = () => {
     );
   }
 
+  if (!isAppReady) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center">
+        <Cloud size={56} className="text-blue-500 mb-6 animate-pulse" /><Loader2 size={32} className="animate-spin text-blue-600 mb-4" />
+        <p className="text-slate-500 font-black tracking-widest uppercase text-sm">Menghubungkan Sesi...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-100 font-sans pb-20 overflow-x-hidden relative">
       <header className="bg-slate-900 text-white p-3 sm:p-4 sticky top-0 z-50 flex flex-col sm:flex-row gap-3 sm:gap-4 items-center justify-between shadow-2xl border-b border-white/5">
@@ -1182,6 +1204,7 @@ const App = () => {
             {!user ? <span className="flex items-center gap-1.5 text-orange-400"><WifiOff size={12} /> OFFLINE</span> : 
              isOfflineMode ? <span className="flex items-center gap-1.5 text-red-500"><WifiOff size={12} /> LOKAL</span> : (
               <>
+                {saveStatus === 'loading' && <span className="flex items-center gap-1.5 text-blue-400"><Loader2 size={12} className="animate-spin" /> Load...</span>}
                 {saveStatus === 'saving' && <span className="flex items-center gap-1.5 text-blue-400"><Loader2 size={12} className="animate-spin" /> Mengirim...</span>}
                 {saveStatus === 'saved' && <span className="flex items-center gap-1.5 text-emerald-400"><CheckCircle2 size={12} /> OK</span>}
                 {saveStatus === 'error' && <button onClick={() => setRetryTrigger(r => r + 1)} className="text-red-400 hover:text-red-300 transition-all flex items-center gap-1 bg-red-400/10 px-2 py-1 rounded-md"><AlertCircle size={12} /> Gagal</button>}
@@ -1218,19 +1241,11 @@ const App = () => {
 
       {view === 'dashboard' && (
         <main className="max-w-6xl mx-auto p-4 sm:p-8 animate-in fade-in duration-500">
+          
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end mb-8 gap-6">
             <div>
-              <h2 className="text-2xl sm:text-3xl font-black text-slate-900 mb-2 flex items-center gap-2.5"><FolderOpen className="text-blue-600 w-8 h-8" /> Arsip Laporan</h2>
+              <h2 className="text-2xl sm:text-3xl font-black text-slate-900 mb-2 flex items-center gap-2.5"><FolderOpen className="text-blue-600 w-8 h-8" /> Ringkasan Kinerja (Analytics)</h2>
               <p className="text-slate-500 font-medium text-xs sm:text-sm">Masuk sebagai: <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-md font-bold">{activeEmail}</span>{isAdmin && <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded-md font-bold text-[9px] ml-2 shadow-sm">👑 Admin</span>}</p>
-              {isAdmin && projects.length > 0 && (
-                <div className="mt-4 flex flex-wrap items-center gap-2 animate-in fade-in slide-in-from-left-4">
-                  <div className="flex items-center gap-1.5 text-[10px] font-black text-slate-400 uppercase tracking-widest"><Filter size={14} className="text-blue-500" /> FILTER USER:</div>
-                  <select value={filterEmail} onChange={e => setFilterEmail(e.target.value)} className="bg-white border-2 border-slate-200 text-slate-700 font-bold text-[10px] rounded-xl px-3 py-2 outline-none shadow-sm cursor-pointer transition-all">
-                    <option value="all">Tampilkan Semua</option>
-                    {uniqueAuthors.map(email => (<option key={email} value={email}>{email === activeEmail ? `${email} (Saya)` : email}</option>))}
-                  </select>
-                </div>
-              )}
             </div>
             <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
               {isAdmin && <button onClick={() => setShowAccessModal(true)} className="w-full sm:w-auto bg-slate-800 text-white px-4 sm:px-6 py-3.5 rounded-2xl font-black uppercase text-[10px] sm:text-xs flex items-center justify-center gap-2 shadow-lg transition-all active:scale-95"><User size={16}/> AKSES</button>}
@@ -1238,10 +1253,116 @@ const App = () => {
               <button onClick={createNewProject} className="w-full sm:w-auto bg-blue-600 text-white px-4 sm:px-8 py-3.5 rounded-2xl font-black uppercase text-[10px] sm:text-xs flex items-center justify-center gap-2 shadow-xl shadow-blue-500/30 transition-all active:scale-95"><Plus size={16}/> BUAT LAPORAN</button>
             </div>
           </div>
+
+          {/* --- PANEL STATISTIK DASHBOARD --- */}
+          {filteredProjects.length > 0 && (
+            <div className="mb-10 space-y-6 animate-in fade-in slide-in-from-bottom-4">
+              
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 flex items-center gap-4 sm:gap-5">
+                   <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0"><FileStack size={24} className="sm:w-[28px] sm:h-[28px]"/></div>
+                   <div className="overflow-hidden">
+                     <p className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1 truncate">Total Laporan</p>
+                     <h3 className="text-xl sm:text-3xl font-black text-slate-800">{filteredProjects.length}</h3>
+                   </div>
+                </div>
+                
+                <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 flex items-center gap-4 sm:gap-5">
+                   <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0"><Layers size={24} className="sm:w-[28px] sm:h-[28px]"/></div>
+                   <div className="overflow-hidden">
+                     <p className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1 truncate">Total Halaman</p>
+                     <h3 className="text-xl sm:text-3xl font-black text-slate-800">{dashboardStats.totalPages}</h3>
+                   </div>
+                </div>
+
+                {isAdmin && (
+                  <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 flex items-center gap-4 sm:gap-5">
+                     <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0"><Users size={24} className="sm:w-[28px] sm:h-[28px]"/></div>
+                     <div className="overflow-hidden">
+                       <p className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1 truncate">Kontributor</p>
+                       <h3 className="text-xl sm:text-3xl font-black text-slate-800">{uniqueAuthors.length}</h3>
+                     </div>
+                  </div>
+                )}
+                
+                <div className={`bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 flex items-center gap-4 sm:gap-5 ${!isAdmin ? 'col-span-2 lg:col-span-2' : ''}`}>
+                   <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-orange-50 text-orange-600 flex items-center justify-center shrink-0"><Activity size={24} className="sm:w-[28px] sm:h-[28px]"/></div>
+                   <div className="overflow-hidden">
+                     <p className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1 truncate">Aktivitas Terbaru</p>
+                     <h3 className="text-sm sm:text-base font-bold text-slate-800 leading-tight">
+                       {filteredProjects[0] ? new Date(filteredProjects[0].updatedAt).toLocaleDateString('id-ID', {day:'numeric', month:'short', year:'numeric'}) : '-'}
+                     </h3>
+                   </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-2 bg-white rounded-[32px] p-6 sm:p-8 border border-slate-200 shadow-sm flex flex-col justify-between">
+                   <div>
+                     <h3 className="text-base sm:text-lg font-black text-slate-800 mb-1 sm:mb-2 flex items-center gap-2"><BarChart3 className="text-blue-500 w-5 h-5 sm:w-6 sm:h-6"/> Aktivitas Pembuatan Laporan</h3>
+                     <p className="text-xs sm:text-sm text-slate-500 font-medium mb-6">Distribusi laporan berdasarkan tema/template yang digunakan.</p>
+                   </div>
+                   
+                   <div className="space-y-4">
+                      <div className="flex items-center gap-3 sm:gap-4">
+                         <div className="w-20 sm:w-24 text-[10px] sm:text-xs font-bold text-slate-500 uppercase">Klasik</div>
+                         <div className="flex-1 h-3 sm:h-4 bg-slate-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-blue-500 rounded-full transition-all duration-1000" style={{width: `${(dashboardStats.templateCounts.klasik / filteredProjects.length) * 100}%`}}></div>
+                         </div>
+                         <div className="w-8 sm:w-12 text-right text-xs sm:text-sm font-black text-slate-700">{dashboardStats.templateCounts.klasik}</div>
+                      </div>
+                      <div className="flex items-center gap-3 sm:gap-4">
+                         <div className="w-20 sm:w-24 text-[10px] sm:text-xs font-bold text-slate-500 uppercase">Modern</div>
+                         <div className="flex-1 h-3 sm:h-4 bg-slate-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-indigo-500 rounded-full transition-all duration-1000" style={{width: `${(dashboardStats.templateCounts.modern / filteredProjects.length) * 100}%`}}></div>
+                         </div>
+                         <div className="w-8 sm:w-12 text-right text-xs sm:text-sm font-black text-slate-700">{dashboardStats.templateCounts.modern}</div>
+                      </div>
+                      <div className="flex items-center gap-3 sm:gap-4">
+                         <div className="w-20 sm:w-24 text-[10px] sm:text-xs font-bold text-slate-500 uppercase">Inspeksi</div>
+                         <div className="flex-1 h-3 sm:h-4 bg-slate-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-[#1e3a8a] rounded-full transition-all duration-1000" style={{width: `${(dashboardStats.templateCounts.inspeksi / filteredProjects.length) * 100}%`}}></div>
+                         </div>
+                         <div className="w-8 sm:w-12 text-right text-xs sm:text-sm font-black text-slate-700">{dashboardStats.templateCounts.inspeksi}</div>
+                      </div>
+                   </div>
+                </div>
+
+                <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-[32px] p-6 sm:p-8 shadow-xl text-white flex flex-col justify-center relative overflow-hidden">
+                   <div className="absolute top-0 right-0 p-8 opacity-10"><PieChart size={120}/></div>
+                   <h3 className="text-xs sm:text-sm font-bold text-slate-300 uppercase tracking-widest mb-2 relative z-10">Rata-rata Volume</h3>
+                   <div className="flex items-end gap-2 relative z-10">
+                      <span className="text-5xl sm:text-6xl font-black">{filteredProjects.length > 0 ? Math.round(dashboardStats.totalPages / filteredProjects.length) : 0}</span>
+                      <span className="text-base sm:text-lg font-bold text-slate-400 mb-1 sm:mb-2">Hal / Laporan</span>
+                   </div>
+                   <p className="text-[10px] sm:text-xs text-slate-400 mt-4 relative z-10">Kepadatan dokumentasi per laporan terpantau stabil.</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* --- BATAS PANEL STATISTIK --- */}
+          <div className="flex items-center justify-between mb-4 mt-8 border-t border-slate-200 pt-8">
+            <h3 className="text-xl font-black text-slate-800 flex items-center gap-2"><ClipboardList className="text-blue-500"/> Daftar Laporan Tersimpan</h3>
+            {isAdmin && projects.length > 0 && (
+              <div className="flex items-center gap-2">
+                <div className="hidden sm:flex items-center gap-1.5 text-[10px] font-black text-slate-400 uppercase tracking-widest"><Filter size={14} className="text-blue-500" /> FILTER:</div>
+                <select value={filterEmail} onChange={e => setFilterEmail(e.target.value)} className="bg-white border-2 border-slate-200 text-slate-700 font-bold text-[10px] rounded-xl px-3 py-2 outline-none shadow-sm cursor-pointer transition-all">
+                  <option value="all">Tampilkan Semua</option>
+                  {uniqueAuthors.map(email => (<option key={email} value={email}>{email === activeEmail ? `${email} (Saya)` : email}</option>))}
+                </select>
+              </div>
+            )}
+          </div>
+
           {isOfflineMode ? (
             <div className="bg-orange-50 rounded-[32px] border-2 border-dashed border-orange-200 p-8 flex flex-col items-center justify-center text-center">
               <WifiOff size={40} className="text-orange-400 mb-4" /><h3 className="text-lg font-black text-orange-700 mb-2">Mode Lokal (Offline)</h3>
               <p className="text-orange-600 max-w-lg text-xs sm:text-sm">Batas kuota database harian penuh. Anda tetap bisa bekerja dan menyimpan hasil via <strong>MENTAHAN (.json)</strong>.</p>
+            </div>
+          ) : !user ? (
+            <div className="bg-slate-100 rounded-[32px] border-2 border-dashed border-slate-300 p-10 flex flex-col items-center justify-center text-center">
+              <Loader2 size={40} className="text-blue-400 mb-4 animate-spin" /><h3 className="text-lg font-black text-slate-600 mb-2">Menyambungkan ke Cloud...</h3>
             </div>
           ) : filteredProjects.length === 0 ? (
             <div className="bg-white rounded-[32px] border-2 border-dashed border-slate-300 p-10 flex flex-col items-center justify-center text-center">
@@ -1264,7 +1385,7 @@ const App = () => {
                         <div className="flex items-center gap-2"><Calendar size={12} /> {new Date(p.updatedAt || Date.now()).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: '2-digit' })}</div>
                       </>
                     )}
-                    <div className="flex items-center gap-2"><FileText size={12} /> {((p.pageCountUmum || 0) + (p.pageCountProgres || 0)) || 0} Halaman</div>
+                    <div className="flex items-center gap-2"><FileText size={12} /> {p.lastActiveTab === 'progres' ? (p.pageCountProgres || 1) : (p.pageCountUmum || p.pageCount || 1)} Halaman</div>
                   </div>
                   <button onClick={() => openProject(p)} className="w-full bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 py-2.5 rounded-xl font-black text-[10px] uppercase transition-all flex justify-center items-center gap-2">Buka Laporan <ChevronRight size={14} /></button>
                 </div>
