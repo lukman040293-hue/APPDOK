@@ -750,14 +750,29 @@ const App = () => {
     if (shouldTriggerDownload && bakedPages) {
       const generatePDF = async () => {
         const element = document.getElementById('pdf-render-area');
+        
+        // Paginasi: Pastikan gambar-gambar termuat sebelum merender
         const images = element.querySelectorAll('img');
         await Promise.all(Array.from(images).map(img => img.complete ? Promise.resolve() : new Promise(r => img.onload = r)));
+        
         const cleanTitle = reportInfo.title.replace(/ /g, '_');
+        
+        // --- OPTIMASI HTML2PDF (SMART PAGINATION) ---
         const options = { 
-            margin: 0, filename: `${cleanTitle}.pdf`, image: { type: 'jpeg', quality: 0.85 }, 
-            html2canvas: { scale: 1.5, useCORS: true, width: 794, windowWidth: 794, scrollX: 0, scrollY: 0, x: 0, y: 0 }, 
+            margin: 0, 
+            filename: `${cleanTitle}.pdf`, 
+            image: { type: 'jpeg', quality: 0.85 }, 
+            pagebreak: { mode: ['css', 'legacy'] }, // Mode legacy memecah div lebih aman untuk memori
+            html2canvas: { 
+              scale: 1.5, // 1.5 optimal antara kualitas dan memori
+              useCORS: true, 
+              width: 794, 
+              windowWidth: 794, 
+              removeContainer: true // Membersihkan sisa elemen di memory (cegah blank putih)
+            }, 
             jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } 
         };
+
         try { 
             if (pdfAction === 'share') {
                 const pdfBlob = await window.html2pdf().set(options).from(element).output('blob');
