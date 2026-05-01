@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Camera, Trash2, Image as ImageIcon, Upload, FileDown, Presentation, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle, ShieldAlert, LifeBuoy, Sun, Droplets, Target, ClipboardList, Cloud, FolderOpen, Plus, ArrowLeft, Calendar, Briefcase, FileText, Loader2, WifiOff, HardDrive, UploadCloud, Lock, User, LogOut, ZoomIn, ZoomOut, Maximize, Smartphone, Palette, Filter, Save, FileStack, Layers, Activity, BarChart3, PieChart, Users } from 'lucide-react';
+import { Camera, Trash2, Image as ImageIcon, Upload, FileDown, Presentation, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle, ShieldAlert, LifeBuoy, Sun, Droplets, Target, ClipboardList, Cloud, FolderOpen, Plus, ArrowLeft, Calendar, Briefcase, FileText, Loader2, WifiOff, HardDrive, UploadCloud, Lock, User, LogOut, ZoomIn, ZoomOut, Maximize, Smartphone, Palette, Filter, Save, FileStack, Layers, Activity, BarChart3, PieChart, Users, Share2 } from 'lucide-react';
 
 // --- MENCEGAH LOG ERROR KUOTA FIREBASE AGAR TIDAK MUNCUL DI LAYAR ---
 const originalConsoleError = console.error;
@@ -209,6 +209,7 @@ const App = () => {
 
   const [currentPage, setCurrentPage] = useState(1);
   const [isPdfLoading, setIsPdfLoading] = useState(false);
+  const [pdfAction, setPdfAction] = useState('download'); // State untuk membedakan download atau share
   const [isPptLoading, setIsPptLoading] = useState(false);
   const [isLibraryReady, setIsLibraryReady] = useState({ pdf: false, ppt: false });
   const [statusMsg, setStatusMsg] = useState({ text: '', type: '' });
@@ -273,7 +274,7 @@ const App = () => {
   // --- MENGHITUNG STATISTIK DASHBOARD ---
   const dashboardStats = useMemo(() => {
     let totalPages = 0;
-    let tCounts = { klasik: 0, modern: 0, inspeksi: 0 };
+    let tCounts = { klasik: 0, modern: 0 };
     filteredProjects.forEach(p => {
       // Hanya menghitung tab terakhir yang aktif sebagai indikator halaman
       const pagesInProject = p.lastActiveTab === 'progres' ? (p.pageCountProgres || 1) : (p.pageCountUmum || p.pageCount || 1);
@@ -709,14 +710,31 @@ const App = () => {
     }
   };
 
-  const triggerPdfBaking = async () => {
-    setIsPdfLoading(true); setStatusMsg({ text: 'Menyiapkan PDF...', type: 'info' });
+  // --- FUNGSI TRIGGER CETAK & SHARE PDF ---
+  const triggerPdfBaking = async (action = 'download') => {
+    setPdfAction(action);
+    setIsPdfLoading(true); 
+    setStatusMsg({ text: action === 'share' ? 'Menyiapkan File...' : 'Menyiapkan PDF...', type: 'info' });
     try {
       const processed = await Promise.all(pages.map(async (page) => {
         return await Promise.all(page.map(async (photo) => {
           if (!photo.src) return photo;
-          const finalSrc = await bakeImageFilters(photo.src, photo.brightness, photo.saturation, photo.zoom, photo.panX, photo.panY);
-          return { ...photo, src: finalSrc, isBaked: true }; 
+          
+          // --- OPTIMASI SUPER CEPAT ---
+          // Hanya me-render ulang (bake) foto jika user benar-benar mengubah filter/posisi
+          const isModified = photo.brightness !== 100 || 
+                             photo.saturation !== 100 || 
+                             photo.zoom !== 100 || 
+                             photo.panX !== 50 || 
+                             photo.panY !== 50;
+
+          if (isModified) {
+              const finalSrc = await bakeImageFilters(photo.src, photo.brightness, photo.saturation, photo.zoom, photo.panX, photo.panY);
+              return { ...photo, src: finalSrc, isBaked: true }; 
+          } else {
+              // Jika foto original (tidak diedit), langsung lewati proses baking yang lama!
+              return { ...photo, isBaked: true };
+          }
         }));
       }));
       setBakedPages(processed); setShouldTriggerDownload(true);
@@ -737,6 +755,63 @@ const App = () => {
       ]).then(() => setIsLibraryReady({ pdf: !!window.html2pdf, ppt: !!window.PptxGenJS }));
     }
   }, [isLibraryReady.pdf]);
+
+  // --- LOGIKA UTAMA DOWNLOAD / SHARE PDF ---
+  useEffect(() => {
+    if (shouldTriggerDownload && bakedPages) {
+      const generatePDF = async () => {
+        const element = document.getElementById('pdf-render-area');
+        const images = element.querySelectorAll('img');
+        await Promise.all(Array.from(images).map(img => img.complete ? Promise.resolve() : new Promise(r => img.onload = r)));
+        
+        const cleanTitle = reportInfo.title.replace(/ /g, '_');
+        const options = { 
+            margin: 0, 
+            filename: `${cleanTitle}.pdf`, 
+            image: { type: 'jpeg', quality: 0.85 }, // Diturunkan sedikit agar file lebih ringan dan cepat
+            html2canvas: { scale: 1.5, useCORS: true, width: 794, windowWidth: 794, scrollX: 0, scrollY: 0, x: 0, y: 0 }, // Scale 1.5 sudah sangat cukup untuk PDF dan 30% lebih cepat dari scale 2
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } 
+        };
+
+        try { 
+            if (pdfAction === 'share') {
+                // Menghasilkan Blob PDF untuk dibagikan (Share)
+                const pdfBlob = await window.html2pdf().set(options).from(element).output('blob');
+                const file = new File([pdfBlob], `${cleanTitle}.pdf`, { type: 'application/pdf' });
+                
+                // Cek dukungan Web Share API & Files pada perangkat/browser
+                if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                    await navigator.share({
+                        files: [file],
+                        title: reportInfo.title,
+                        text: 'Berikut adalah laporan dokumentasi lapangan.'
+                    });
+                    setStatusMsg({ text: 'Berhasil dibagikan!', type: 'success' });
+                } else {
+                    // Fallback jika tidak mendukung (misal di PC lawas)
+                    setStatusMsg({ text: 'Otomatis Mengunduh...', type: 'info' });
+                    await window.html2pdf().set(options).from(element).save();
+                }
+            } else {
+                // Jika tombol "PDF" biasa yang ditekan (Hanya Download)
+                await window.html2pdf().set(options).from(element).save(); 
+                setStatusMsg({ text: 'PDF Diunduh!', type: 'success' }); 
+            }
+        } 
+        catch (e) {
+            if (e.name !== 'AbortError') {
+                console.error(e);
+            }
+            setStatusMsg({ text: e.name === 'AbortError' ? 'Batal Dibagikan' : 'Dibatalkan / Selesai', type: 'info' });
+        }
+        finally { 
+            setIsPdfLoading(false); setBakedPages(null); setShouldTriggerDownload(false); 
+            setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000); 
+        }
+      };
+      generatePDF();
+    }
+  }, [shouldTriggerDownload, bakedPages, reportInfo, pdfAction]);
 
   const downloadMentahan = () => {
     try {
@@ -1039,9 +1114,9 @@ const App = () => {
         });
         
         const isModernTemplate = reportInfo.template === 'modern';
-        let lineColor = reportInfo.template === 'inspeksi' ? '1E3A8A' : '0F172A'; 
+        let lineColor = '0F172A'; 
         if (isModernTemplate) lineColor = '3730A3'; 
-        if (reportType === 'progres' && !isModernTemplate && reportInfo.template !== 'inspeksi') lineColor = '10B981'; 
+        if (reportType === 'progres' && !isModernTemplate) lineColor = '10B981'; 
         
         slide.addShape(pptx.ShapeType.line, { x: PAGE_MARGIN_SIDE, y: curY + 0.05, w: CONTENT_W, h: 0, line: { color: lineColor, width: isModernTemplate ? 3 : 2 } });
         
@@ -1075,38 +1150,6 @@ const App = () => {
 
   const ReportPage = ({ data, isFinal = false }) => {
     const template = reportInfo.template || 'klasik';
-    if (template === 'inspeksi') {
-      return (
-        <div className={`bg-white w-[210mm] flex flex-col font-sans relative box-border ${isFinal ? 'report-page-final' : 'mb-10 shadow-2xl rounded-sm border border-slate-200 shrink-0'}`} style={{ height: '296.7mm', padding: '12mm 15mm', margin: '0 auto', pageBreakAfter: 'always' }}>
-          <div className="text-center mb-4 flex-none">
-            {reportInfo.logos?.[0] ? (
-               <img src={reportInfo.logos[0]} className="h-16 w-auto mx-auto object-contain" alt="Logo" />
-            ) : (
-               <div className="pt-2">
-                 <h1 className="text-3xl font-black text-[#1e3a8a] tracking-wide mb-1" style={{fontFamily: 'Arial, Helvetica, sans-serif'}}>TRIBHAKTI</h1>
-                 <h2 className="text-[10px] font-bold text-[#1e3a8a] tracking-[0.1em]">LABORATORY &amp; INTEGRATED SERVICES</h2>
-               </div>
-            )}
-          </div>
-          <div className="flex-grow flex flex-col">
-            <div className="border-t-[1.5px] border-l-[1.5px] border-black flex flex-wrap w-full bg-white flex-grow">
-              {data.map((p, i) => (
-                <div key={i} className="w-1/2 border-r-[1.5px] border-b-[1.5px] border-black flex flex-col box-border p-1" style={{ height: '33.333%' }}>
-                  <div className="flex-grow overflow-hidden relative bg-white flex items-center justify-center border border-transparent">
-                     {p?.src ? (
-                       <img src={p.src} className="w-full h-full object-cover" style={{ filter: `brightness(${p.brightness || 100}%) saturate(${p.saturation || 100}%)`, transform: `scale(${(p.zoom || 100) / 100})`, transformOrigin: `${p.panX ?? 50}% ${p.panY ?? 50}%` }} alt="" />
-                     ) : ( <div className="text-slate-200"><ImageIcon size={40}/></div> )}
-                  </div>
-                  <div className="h-6 flex items-center justify-center text-[8pt] font-bold text-black bg-white mt-1 text-center break-words px-1 line-clamp-2">
-                    {p?.note || '-'}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      );
-    }
     const cMeta = reportInfo.customMeta || [];
     const meta = [...cMeta.map(m => ({ l: m.label, v: m.value })), { l: "Tahun", v: reportInfo.date }];
     const isModern = template === 'modern';
@@ -1226,8 +1269,15 @@ const App = () => {
               <button onClick={() => setView('edit')} className={`shrink-0 px-3 py-2 sm:px-5 sm:py-2.5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-black transition-all ${view === 'edit' ? 'bg-white text-black shadow-lg' : 'text-slate-400 hover:text-white'}`}>EDITOR</button>
               <button onClick={() => setView('preview')} className={`shrink-0 px-3 py-2 sm:px-5 sm:py-2.5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-black transition-all ${view === 'preview' ? 'bg-white text-black shadow-lg' : 'text-slate-400 hover:text-white'}`}>PREVIEW</button>
               <div className="w-px h-6 bg-white/20 mx-1 shrink-0"></div>
+              
+              <button onClick={() => triggerPdfBaking('share')} disabled={isPdfLoading} className="shrink-0 bg-blue-500 hover:bg-blue-400 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl sm:rounded-2xl font-black text-[10px] sm:text-xs text-white flex items-center gap-1.5 sm:gap-2 shadow-lg transition-all active:scale-95 disabled:opacity-50">
+                {isPdfLoading && pdfAction === 'share' ? <Loader2 size={16} className="animate-spin w-4 h-4 sm:w-5 sm:h-5"/> : <Share2 size={16} className="w-4 h-4 sm:w-5 sm:h-5"/>} BAGIKAN
+              </button>
+              <button onClick={() => triggerPdfBaking('download')} disabled={isPdfLoading} className="shrink-0 bg-emerald-600 hover:bg-emerald-500 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl sm:rounded-2xl font-black text-[10px] sm:text-xs text-white flex items-center gap-1.5 shadow-lg active:scale-95 disabled:opacity-50">
+                {isPdfLoading && pdfAction === 'download' ? <Loader2 size={16} className="animate-spin"/> : <FileDown size={16}/>} PDF
+              </button>
+              
               <button onClick={downloadMentahan} className="shrink-0 bg-slate-700 hover:bg-slate-600 px-3 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl font-black text-[10px] sm:text-xs text-white flex items-center gap-1.5 sm:gap-2 shadow-lg transition-all" title="Simpan Mentahan (.json)"><HardDrive size={16} /><span className="hidden lg:inline">MENTAHAN</span></button>
-              <button onClick={triggerPdfBaking} disabled={isPdfLoading} className="shrink-0 bg-emerald-600 hover:bg-emerald-500 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl sm:rounded-2xl font-black text-[10px] sm:text-xs text-white flex items-center gap-1.5 shadow-lg active:scale-95 disabled:opacity-50">{isPdfLoading ? <Loader2 size={16} className="animate-spin"/> : <FileDown size={16}/>} PDF</button>
               <button onClick={downloadPPTX} disabled={isPptLoading} className="shrink-0 bg-orange-600 hover:bg-orange-500 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl sm:rounded-2xl font-black text-[10px] sm:text-xs text-white flex items-center gap-1.5 shadow-lg active:scale-95 disabled:opacity-50">{isPptLoading ? <Loader2 size={16} className="animate-spin"/> : <Presentation size={16}/>} PPTX</button>
             </>
           )}
@@ -1423,7 +1473,7 @@ const App = () => {
               <div className="md:col-span-2 mt-4 pt-4 border-t border-slate-100">
                 <label className="text-[9px] font-black text-blue-500 ml-2 flex items-center gap-1.5 mb-2"><Palette size={14} /> TEMA TAMPILAN PDF</label>
                 <div className="flex gap-2 bg-slate-50 p-2 rounded-2xl shadow-inner border border-slate-200 overflow-x-auto">
-                   {['klasik', 'modern', 'inspeksi'].map(t => (
+                   {['klasik', 'modern'].map(t => (
                      <button key={t} onClick={() => setReportInfo({...reportInfo, template: t})} className={`min-w-[90px] flex-1 py-3 rounded-xl text-[10px] font-black capitalize transition-all ${reportInfo.template === t ? 'bg-white shadow-md text-blue-600 border border-blue-200' : 'text-slate-400'}`}>{t}</button>
                    ))}
                 </div>
