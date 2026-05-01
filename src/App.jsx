@@ -229,6 +229,7 @@ const App = () => {
   const lastSavedHashRef = useRef({}); 
   const latestDataRef = useRef({ reportInfo, pagesData, reportType }); // Ref untuk mencegah reset interval autosave
   const [isOfflineMode, setIsOfflineMode] = useState(false); 
+  const isNewlyCreatedRef = useRef(false); // PENANDA PROYEK BARU UNTUK MENCEGAH TENDANGAN LIVE SYNC
   
   const [showClearModal, setShowClearModal] = useState(false);
   const [showDeleteProjectModal, setShowDeleteProjectModal] = useState({ show: false, project: null });
@@ -421,12 +422,22 @@ const App = () => {
 
     const projRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_projects', activeProjectId);
     const unsubscribe = onSnapshot(projRef, async (snap) => {
+        // Cek apakah data tidak ada di server
         if (!snap.exists()) {
+            // PERBAIKAN: Jika ini memang proyek yang baru saja dibuat oleh kita, ABAIKAN pesan error ini!
+            if (isNewlyCreatedRef.current) {
+                return;
+            }
+
+            // Jika bukan proyek baru, berarti memang benar dihapus orang lain
             setStatusMsg({ text: 'Proyek dihapus oleh orang lain.', type: 'error' });
             setView('dashboard');
             setActiveProjectId(null);
             return;
         }
+
+        // Jika dokumen eksis, berarti proyek ini bukan lagi "Proyek Baru yang belum tersimpan"
+        isNewlyCreatedRef.current = false;
 
         const data = snap.data();
         // Cek apakah proyek ini baru saja disimpan oleh perangkat/sesi lain
@@ -695,6 +706,9 @@ const App = () => {
       lastSavedHashRef.current.reportInfo = JSON.stringify(info);
       lastSavedHashRef.current.umumLength = pagesObj.umum.length;
       lastSavedHashRef.current.progresLength = pagesObj.progres.length;
+      
+      // Berhasil tersimpan, bukan lagi proyek tak bernama
+      isNewlyCreatedRef.current = false;
 
       setSaveStatus('saved');
       return true;
@@ -730,6 +744,8 @@ const App = () => {
     const newPages = { umum: [createNewPage()], progres: [createNewPage()] };
     const now = Date.now();
     
+    isNewlyCreatedRef.current = true; // PENANDA BAHWA INI PROYEK BARU
+    
     lastSavedHashRef.current = {
         reportInfo: JSON.stringify(newInfo),
         umumLength: 1,
@@ -750,6 +766,9 @@ const App = () => {
   const openProject = async (project, sessionData = null) => {
     if (!user) { setStatusMsg({ text: 'Mode Offline', type: 'error' }); return; }
     if (isOfflineMode || !db) { setStatusMsg({ text: 'Mode Offline Aktif', type: 'error' }); setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000); return; }
+    
+    isNewlyCreatedRef.current = false; // Ini proyek lama, jadi matikan penanda
+    
     setActiveProjectId(project.id);
     setStatusMsg({ text: 'Menarik Foto...', type: 'info' });
     setSaveStatus('loading');
@@ -1025,8 +1044,10 @@ const App = () => {
         const newId = `proj_${Date.now()}`;
         const now = Date.now();
         setActiveProjectId(newId);
-        let loadedInfo = data.reportInfo || defaultReportInfo;
         
+        isNewlyCreatedRef.current = true; // Penanda karena menggunakan ID baru
+        
+        let loadedInfo = data.reportInfo || defaultReportInfo;
         lastSavedHashRef.current = { reportInfo: JSON.stringify(loadedInfo), umumLength: data.pagesData?.umum?.length || 0, progresLength: data.pagesData?.progres?.length || 0 }; 
         setReportInfo(loadedInfo); setReportType(data.reportType || 'umum'); setPagesData(data.pagesData);
         setCurrentPage(1); setProjectAuthor(activeEmail); setProjectTime(now); setView('edit');
