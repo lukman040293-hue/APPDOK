@@ -506,6 +506,9 @@ const App = () => {
     }
   }, [view]);
 
+  // =========================================================================
+  // FUNGSI PENYIMPANAN PARALEL CEPAT (SUPER HEMAT & ANTI-MACET)
+  // =========================================================================
   const saveToCloudNow = async (id, info, pagesObj, type, emailToSave, timeToSave) => {
     if (!user || !id) return Promise.resolve(false);
     if (isOfflineMode || !db) return Promise.resolve(false);
@@ -516,10 +519,10 @@ const App = () => {
     
     try {
       setSaveStatus('saving');
-      const batch = writeBatch(db);
       
+      // 1. Simpan Info Proyek Utama
       const projRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_projects', id);
-      batch.set(projRef, { 
+      await setDoc(projRef, { 
         reportInfo: info, 
         lastActiveTab: type, 
         pageCountUmum: pagesObj.umum.length, 
@@ -528,37 +531,52 @@ const App = () => {
         authorEmail: emailToSave 
       });
 
-      let hasChanges = false;
+      // 2. Kumpulkan Semua Tugas (Halaman yang berubah / harus dihapus)
+      const uploadTasks = [];
+      const deleteTasks = [];
 
       for (let i = 0; i < pagesObj.umum.length; i++) {
          const currentStr = JSON.stringify(pagesObj.umum[i]);
          if (lastSavedHashRef.current[`${id}_umum_${i}`] !== currentStr) {
              const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_umum_page_${i}`);
-             batch.set(pageRef, { index: i, projectId: id, type: 'umum', data: pagesObj.umum[i] });
-             lastSavedHashRef.current[`${id}_umum_${i}`] = currentStr;
-             hasChanges = true;
+             uploadTasks.push(() => setDoc(pageRef, { index: i, projectId: id, type: 'umum', data: pagesObj.umum[i] }).then(() => {
+                 lastSavedHashRef.current[`${id}_umum_${i}`] = currentStr;
+             }));
          }
       }
       for(let i = pagesObj.umum.length; i < 50; i++) {
          const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_umum_page_${i}`);
-         batch.delete(pageRef);
+         deleteTasks.push(() => deleteDoc(pageRef).catch(()=>{}));
       }
 
       for (let i = 0; i < pagesObj.progres.length; i++) {
          const currentStr = JSON.stringify(pagesObj.progres[i]);
          if (lastSavedHashRef.current[`${id}_progres_${i}`] !== currentStr) {
              const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_progres_page_${i}`);
-             batch.set(pageRef, { index: i, projectId: id, type: 'progres', data: pagesObj.progres[i] });
-             lastSavedHashRef.current[`${id}_progres_${i}`] = currentStr;
-             hasChanges = true;
+             uploadTasks.push(() => setDoc(pageRef, { index: i, projectId: id, type: 'progres', data: pagesObj.progres[i] }).then(() => {
+                 lastSavedHashRef.current[`${id}_progres_${i}`] = currentStr;
+             }));
          }
       }
       for(let i = pagesObj.progres.length; i < 50; i++) {
          const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_progres_page_${i}`);
-         batch.delete(pageRef);
+         deleteTasks.push(() => deleteDoc(pageRef).catch(()=>{}));
       }
       
-      await batch.commit();
+      // 3. Eksekusi secara Paralel dalam Kelompok (Chunking)
+      // Ini mencegah Crash Limit 10MB dari Firebase jika upload 50 Halaman sekaligus
+      const executeInChunks = async (tasks, chunkSize) => {
+        for (let i = 0; i < tasks.length; i += chunkSize) {
+          const chunk = tasks.slice(i, i + chunkSize);
+          await Promise.all(chunk.map(task => task()));
+        }
+      };
+
+      // Tembak upload 5 halaman sekaligus secara paralel agar super ngebut dan stabil
+      await executeInChunks(uploadTasks, 5); 
+      // Eksekusi penghapusan halaman kosong dengan lebih cepat
+      await executeInChunks(deleteTasks, 20);
+
       setSaveStatus('saved');
       return true;
     } catch (error) { 
