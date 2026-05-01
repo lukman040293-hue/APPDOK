@@ -1246,6 +1246,15 @@ const App = () => {
             <div>
               <h2 className="text-2xl sm:text-3xl font-black text-slate-900 mb-2 flex items-center gap-2.5"><FolderOpen className="text-blue-600 w-8 h-8" /> Arsip Laporan</h2>
               <p className="text-slate-500 font-medium text-xs sm:text-sm">Masuk sebagai: <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-md font-bold">{activeEmail}</span>{isAdmin && <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded-md font-bold text-[9px] ml-2 shadow-sm">👑 Admin</span>}</p>
+              {isAdmin && projects.length > 0 && (
+                <div className="mt-4 flex flex-wrap items-center gap-2 animate-in fade-in slide-in-from-left-4">
+                  <div className="flex items-center gap-1.5 text-[10px] font-black text-slate-400 uppercase tracking-widest"><Filter size={14} className="text-blue-500" /> FILTER USER:</div>
+                  <select value={filterEmail} onChange={e => setFilterEmail(e.target.value)} className="bg-white border-2 border-slate-200 text-slate-700 font-bold text-[10px] rounded-xl px-3 py-2 outline-none shadow-sm cursor-pointer transition-all">
+                    <option value="all">Tampilkan Semua</option>
+                    {uniqueAuthors.map(email => (<option key={email} value={email}>{email === activeEmail ? `${email} (Saya)` : email}</option>))}
+                  </select>
+                </div>
+              )}
             </div>
             <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
               {isAdmin && <button onClick={() => setShowAccessModal(true)} className="w-full sm:w-auto bg-slate-800 text-white px-4 sm:px-6 py-3.5 rounded-2xl font-black uppercase text-[10px] sm:text-xs flex items-center justify-center gap-2 shadow-lg transition-all active:scale-95"><User size={16}/> AKSES</button>}
@@ -1254,98 +1263,99 @@ const App = () => {
             </div>
           </div>
 
-          {/* --- PANEL STATISTIK DASHBOARD --- */}
-          {isAdmin && filteredProjects.length > 0 && (
-            <div className="mb-10 space-y-6 animate-in fade-in slide-in-from-bottom-4">
-              
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 flex items-center gap-4 sm:gap-5">
-                   <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0"><FileStack size={24} className="sm:w-[28px] sm:h-[28px]"/></div>
-                   <div className="overflow-hidden">
-                     <p className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1 truncate">Total Laporan</p>
-                     <h3 className="text-xl sm:text-3xl font-black text-slate-800">{filteredProjects.length}</h3>
-                   </div>
-                </div>
-                
-                <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 flex items-center gap-4 sm:gap-5">
-                   <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0"><Layers size={24} className="sm:w-[28px] sm:h-[28px]"/></div>
-                   <div className="overflow-hidden">
-                     <p className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1 truncate">Total Halaman</p>
-                     <h3 className="text-xl sm:text-3xl font-black text-slate-800">{dashboardStats.totalPages}</h3>
-                   </div>
-                </div>
-
-                <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 flex items-center gap-4 sm:gap-5">
-                   <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0"><Users size={24} className="sm:w-[28px] sm:h-[28px]"/></div>
-                   <div className="overflow-hidden">
-                     <p className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1 truncate">Kontributor</p>
-                     <h3 className="text-xl sm:text-3xl font-black text-slate-800">{uniqueAuthors.length}</h3>
-                   </div>
-                </div>
-                
-                <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 flex items-center gap-4 sm:gap-5">
-                   <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-orange-50 text-orange-600 flex items-center justify-center shrink-0"><Activity size={24} className="sm:w-[28px] sm:h-[28px]"/></div>
-                   <div className="overflow-hidden">
-                     <p className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1 truncate">Aktivitas Terbaru</p>
-                     <h3 className="text-sm sm:text-base font-bold text-slate-800 leading-tight">
-                       {filteredProjects[0] ? new Date(filteredProjects[0].updatedAt).toLocaleDateString('id-ID', {day:'numeric', month:'short', year:'numeric'}) : '-'}
-                     </h3>
-                   </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* --- BATAS PANEL STATISTIK --- */}
-          <div className="flex items-center justify-between mb-4 mt-8 border-t border-slate-200 pt-8">
-            <h3 className="text-xl font-black text-slate-800 flex items-center gap-2"><ClipboardList className="text-blue-500"/> Daftar Laporan Tersimpan</h3>
-            {isAdmin && projects.length > 0 && (
-              <div className="flex items-center gap-2">
-                <div className="hidden sm:flex items-center gap-1.5 text-[10px] font-black text-slate-400 uppercase tracking-widest"><Filter size={14} className="text-blue-500" /> FILTER:</div>
-                <select value={filterEmail} onChange={e => setFilterEmail(e.target.value)} className="bg-white border-2 border-slate-200 text-slate-700 font-bold text-[10px] rounded-xl px-3 py-2 outline-none shadow-sm cursor-pointer transition-all">
-                  <option value="all">Tampilkan Semua</option>
-                  {uniqueAuthors.map(email => (<option key={email} value={email}>{email === activeEmail ? `${email} (Saya)` : email}</option>))}
-                </select>
-              </div>
-            )}
-          </div>
-
           {isOfflineMode ? (
-            <div className="bg-orange-50 rounded-[32px] border-2 border-dashed border-orange-200 p-8 flex flex-col items-center justify-center text-center">
+            <div className="bg-orange-50 rounded-[32px] border-2 border-dashed border-orange-200 p-8 flex flex-col items-center justify-center text-center mt-8">
               <WifiOff size={40} className="text-orange-400 mb-4" /><h3 className="text-lg font-black text-orange-700 mb-2">Mode Lokal (Offline)</h3>
               <p className="text-orange-600 max-w-lg text-xs sm:text-sm">Batas kuota database harian penuh. Anda tetap bisa bekerja dan menyimpan hasil via <strong>MENTAHAN (.json)</strong>.</p>
             </div>
           ) : !user ? (
-            <div className="bg-slate-100 rounded-[32px] border-2 border-dashed border-slate-300 p-10 flex flex-col items-center justify-center text-center">
+            <div className="bg-slate-100 rounded-[32px] border-2 border-dashed border-slate-300 p-10 flex flex-col items-center justify-center text-center mt-8">
               <Loader2 size={40} className="text-blue-400 mb-4 animate-spin" /><h3 className="text-lg font-black text-slate-600 mb-2">Menyambungkan ke Cloud...</h3>
             </div>
-          ) : filteredProjects.length === 0 ? (
-            <div className="bg-white rounded-[32px] border-2 border-dashed border-slate-300 p-10 flex flex-col items-center justify-center text-center">
-              <ClipboardList size={48} className="text-slate-300 mb-4" /><h3 className="text-lg font-black text-slate-600 mb-2">Belum Ada Laporan</h3>
-            </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-              {filteredProjects.map(p => (
-                <div key={p.id} className="bg-white rounded-[24px] p-5 shadow-xl border border-slate-200 hover:border-blue-400 transition-all flex flex-col hover:-translate-y-1">
-                  <div className="flex justify-between items-start mb-3">
-                     <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase bg-blue-100 text-blue-700">DOKUMENTASI</span>
-                     <button onClick={(e) => { e.stopPropagation(); setShowDeleteProjectModal({show: true, project: p}); }} className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg transition-all"><Trash2 size={16}/></button>
+            <>
+              {/* --- PANEL STATISTIK DASHBOARD --- */}
+              {isAdmin && (
+                <div className="mb-10 space-y-6 animate-in fade-in slide-in-from-bottom-4">
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 flex items-center gap-4 sm:gap-5">
+                       <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0"><FileStack size={24} className="sm:w-[28px] sm:h-[28px]"/></div>
+                       <div className="overflow-hidden">
+                         <p className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1 truncate">Total Laporan</p>
+                         <h3 className="text-xl sm:text-3xl font-black text-slate-800">{filteredProjects.length}</h3>
+                       </div>
+                    </div>
+                    
+                    <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 flex items-center gap-4 sm:gap-5">
+                       <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0"><Layers size={24} className="sm:w-[28px] sm:h-[28px]"/></div>
+                       <div className="overflow-hidden">
+                         <p className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1 truncate">Total Halaman</p>
+                         <h3 className="text-xl sm:text-3xl font-black text-slate-800">{dashboardStats.totalPages}</h3>
+                       </div>
+                    </div>
+
+                    <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 flex items-center gap-4 sm:gap-5">
+                       <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0"><Users size={24} className="sm:w-[28px] sm:h-[28px]"/></div>
+                       <div className="overflow-hidden">
+                         <p className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1 truncate">Kontributor</p>
+                         <h3 className="text-xl sm:text-3xl font-black text-slate-800">{uniqueAuthors.length}</h3>
+                       </div>
+                    </div>
+                    
+                    <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 flex items-center gap-4 sm:gap-5">
+                       <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-orange-50 text-orange-600 flex items-center justify-center shrink-0"><Activity size={24} className="sm:w-[28px] sm:h-[28px]"/></div>
+                       <div className="overflow-hidden w-full">
+                         <p className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1 truncate">Aktivitas Terbaru</p>
+                         <h3 className="text-sm sm:text-base font-bold text-slate-800 leading-tight">
+                           {filteredProjects.length > 0 && filteredProjects[0] ? new Date(filteredProjects[0].updatedAt).toLocaleString('id-ID', {day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'}) : '-'}
+                         </h3>
+                         {filteredProjects.length > 0 && filteredProjects[0]?.authorEmail && (
+                             <p className="text-[9px] sm:text-[10px] text-slate-500 font-medium truncate mt-1">Oleh: <span className="text-blue-600">{filteredProjects[0].authorEmail}</span></p>
+                         )}
+                       </div>
+                    </div>
                   </div>
-                  <h3 className="text-base font-black text-slate-800 mb-3 line-clamp-2">{p.reportInfo?.title || 'Laporan'}</h3>
-                  <div className="space-y-1.5 mb-4 flex-grow text-[10px] text-slate-500 font-medium">
-                    <div className="flex items-center gap-2 truncate"><Briefcase size={12} /> {p.reportInfo?.customMeta?.[0]?.value || p.reportInfo?.project || '-'}</div>
-                    {isAdmin && (
-                      <>
-                        <div className="flex items-center gap-2 truncate"><User size={12} /> Oleh: <strong className="text-slate-600">{p.authorEmail || 'Anonim'}</strong></div>
-                        <div className="flex items-center gap-2"><Calendar size={12} /> {new Date(p.updatedAt || Date.now()).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: '2-digit' })}</div>
-                      </>
-                    )}
-                    <div className="flex items-center gap-2"><FileText size={12} /> {p.lastActiveTab === 'progres' ? (p.pageCountProgres || 1) : (p.pageCountUmum || p.pageCount || 1)} Halaman</div>
-                  </div>
-                  <button onClick={() => openProject(p)} className="w-full bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 py-2.5 rounded-xl font-black text-[10px] uppercase transition-all flex justify-center items-center gap-2">Buka Laporan <ChevronRight size={14} /></button>
                 </div>
-              ))}
-            </div>
+              )}
+
+              {/* --- BATAS PANEL STATISTIK --- */}
+              <div className="flex items-center justify-between mb-4 border-t border-slate-200 pt-8">
+                <h3 className="text-xl font-black text-slate-800 flex items-center gap-2"><ClipboardList className="text-blue-500"/> Daftar Laporan Tersimpan</h3>
+              </div>
+
+              {filteredProjects.length === 0 ? (
+                <div className="bg-white rounded-[32px] border-2 border-dashed border-slate-300 p-10 flex flex-col items-center justify-center text-center">
+                  <ClipboardList size={48} className="text-slate-300 mb-4" />
+                  <h3 className="text-lg font-black text-slate-600 mb-2">Belum Ada Laporan</h3>
+                  <p className="text-slate-400 text-xs sm:text-sm">
+                    {filterEmail !== 'all' ? 'User ini belum memiliki laporan.' : 'Klik buat laporan baru untuk memulai.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                  {filteredProjects.map(p => (
+                    <div key={p.id} className="bg-white rounded-[24px] p-5 shadow-xl border border-slate-200 hover:border-blue-400 transition-all flex flex-col hover:-translate-y-1">
+                      <div className="flex justify-between items-start mb-3">
+                         <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase bg-blue-100 text-blue-700">DOKUMENTASI</span>
+                         <button onClick={(e) => { e.stopPropagation(); setShowDeleteProjectModal({show: true, project: p}); }} className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg transition-all"><Trash2 size={16}/></button>
+                      </div>
+                      <h3 className="text-base font-black text-slate-800 mb-3 line-clamp-2">{p.reportInfo?.title || 'Laporan'}</h3>
+                      <div className="space-y-1.5 mb-4 flex-grow text-[10px] text-slate-500 font-medium">
+                        <div className="flex items-center gap-2 truncate"><Briefcase size={12} /> {p.reportInfo?.customMeta?.[0]?.value || p.reportInfo?.project || '-'}</div>
+                        {isAdmin && (
+                          <>
+                            <div className="flex items-center gap-2 truncate"><User size={12} /> Oleh: <strong className="text-slate-600">{p.authorEmail || 'Anonim'}</strong></div>
+                            <div className="flex items-center gap-2"><Calendar size={12} /> {new Date(p.updatedAt || Date.now()).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
+                          </>
+                        )}
+                        <div className="flex items-center gap-2"><FileText size={12} /> {p.lastActiveTab === 'progres' ? (p.pageCountProgres || 1) : (p.pageCountUmum || p.pageCount || 1)} Halaman</div>
+                      </div>
+                      <button onClick={() => openProject(p)} className="w-full bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 py-2.5 rounded-xl font-black text-[10px] uppercase transition-all flex justify-center items-center gap-2">Buka Laporan <ChevronRight size={14} /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </main>
       )}
