@@ -6,27 +6,43 @@ import {
   ArrowLeft, Calendar, Briefcase, FileText, Loader2, WifiOff, 
   HardDrive, UploadCloud, Lock, User, LogOut, ZoomIn, ZoomOut, 
   Maximize, Palette, Filter, Save, FileStack, Layers, Activity, 
-  BarChart3, PieChart, Users, Share2 
+  BarChart3, PieChart, Users, Share2, Check
 } from 'lucide-react';
 
 // --- ID Sesi Unik Untuk Real-Time Sync Antar Perangkat ---
 const TAB_SESSION_ID = Math.random().toString(36).substring(2, 15);
 
 // --- ALGORITMA "SMART FINGERPRINT" UNTUK MEMPERCEPAT DETEKSI SINKRONISASI ---
-// Menggantikan JSON.stringify yang lambat karena tidak memuat data Base64 utuh
 const createPageHash = (pageData) => {
   if (!pageData) return "null";
   try {
     const lightData = pageData.map(p => ({
       n: p.note, b: p.brightness, s: p.saturation, z: p.zoom, x: p.panX, y: p.panY, prog: p.progress,
-      // Alih-alih merender jutaan karakter string gambar, kita cukup ambil 30 karakter awal + info panjangnya.
-      // Ini menghemat 99% memori dan mempercepat sinkronisasi secara instan!
       id: p.src ? p.src.substring(0, 30) + p.src.length : null 
     }));
     return JSON.stringify(lightData);
   } catch (e) {
     return "error";
   }
+};
+
+// --- FUNGSI TEMA WARNA UNIK PER USER ---
+const getUserColorTheme = (email) => {
+  if (!email || email === 'Anonim') return { bg: 'bg-slate-100', text: 'text-slate-600', border: 'border-slate-200', solid: 'bg-slate-500', initial: '?' };
+  const colors = [
+    { bg: 'bg-red-100', text: 'text-red-700', border: 'border-red-200', solid: 'bg-red-500' },
+    { bg: 'bg-orange-100', text: 'text-orange-700', border: 'border-orange-200', solid: 'bg-orange-500' },
+    { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200', solid: 'bg-emerald-500' },
+    { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-200', solid: 'bg-blue-500' },
+    { bg: 'bg-indigo-100', text: 'text-indigo-700', border: 'border-indigo-200', solid: 'bg-indigo-500' },
+    { bg: 'bg-purple-100', text: 'text-purple-700', border: 'border-purple-200', solid: 'bg-purple-500' },
+    { bg: 'bg-pink-100', text: 'text-pink-700', border: 'border-pink-200', solid: 'bg-pink-500' },
+    { bg: 'bg-cyan-100', text: 'text-cyan-700', border: 'border-cyan-200', solid: 'bg-cyan-500' },
+  ];
+  let hash = 0;
+  for (let i = 0; i < email.length; i++) hash = email.charCodeAt(i) + ((hash << 5) - hash);
+  const theme = colors[Math.abs(hash) % colors.length];
+  return { ...theme, initial: email.charAt(0).toUpperCase() };
 };
 
 // --- MENCEGAH LOG ERROR KUOTA FIREBASE AGAR TIDAK MUNCUL DI LAYAR ---
@@ -244,12 +260,12 @@ const App = () => {
   const [shouldTriggerDownload, setShouldTriggerDownload] = useState(false);
   
   const lastSavedHashRef = useRef({}); 
-  const latestDataRef = useRef({ reportInfo, pagesData, reportType }); // Ref untuk mencegah reset interval autosave
+  const latestDataRef = useRef({ reportInfo, pagesData, reportType }); 
   const [isOfflineMode, setIsOfflineMode] = useState(false); 
-  const isNewlyCreatedRef = useRef(false); // PENANDA PROYEK BARU UNTUK MENCEGAH TENDANGAN LIVE SYNC
-  const isSavingRef = useRef(false); // ANTI TABRAKAN AUTOSAVE (LOCK)
-  const queuedSaveDataRef = useRef(null); // --- TAMBAHAN: ANTRIAN SAVE ---
-  const projectCacheRef = useRef({}); // --- ANTI-REVERT CACHE ---
+  const isNewlyCreatedRef = useRef(false); 
+  const isSavingRef = useRef(false); 
+  const queuedSaveDataRef = useRef(null); 
+  const projectCacheRef = useRef({}); 
   
   const [showClearModal, setShowClearModal] = useState(false);
   const [showDeleteProjectModal, setShowDeleteProjectModal] = useState({ show: false, project: null });
@@ -294,9 +310,8 @@ const App = () => {
     return !hasText && !hasMeta && !hasMedia && !hasLogo;
   };
 
-  // --- FUNGSI CERDAS: Cek apakah benar-benar ada data yang diedit DENGAN SMART FINGERPRINT ---
   const checkHasChanges = (id, info, pagesObj) => {
-    if (!lastSavedHashRef.current.reportInfo) return true; // Belum pernah tersimpan di sesi ini
+    if (!lastSavedHashRef.current.reportInfo) return true; 
     if (JSON.stringify(info) !== lastSavedHashRef.current.reportInfo) return true;
     if (pagesObj.umum.length !== (lastSavedHashRef.current.umumLength || 0)) return true;
     if (pagesObj.progres.length !== (lastSavedHashRef.current.progresLength || 0)) return true;
@@ -436,28 +451,19 @@ const App = () => {
     return () => unsubscribe();
   }, [user, activeEmail, currentAdmins, isOfflineMode]);
 
-  // --- FITUR BARU: Real-Time Live Sync saat berada di dalam Editor Proyek ---
   useEffect(() => {
     if (!user || !activeProjectId || view === 'dashboard' || isOfflineMode || !db) return;
 
     const projRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_projects', activeProjectId);
     const unsubscribe = onSnapshot(projRef, async (snap) => {
-        // Cek apakah data tidak ada di server
         if (!snap.exists()) {
-            if (isNewlyCreatedRef.current) {
-                return;
-            }
+            if (isNewlyCreatedRef.current) return;
             setStatusMsg({ text: 'Proyek dihapus oleh orang lain.', type: 'error' });
-            setView('dashboard');
-            setActiveProjectId(null);
-            return;
+            setView('dashboard'); setActiveProjectId(null); return;
         }
 
-        // Jika dokumen eksis, berarti proyek ini bukan lagi "Proyek Baru yang belum tersimpan"
         isNewlyCreatedRef.current = false;
-
         const data = snap.data();
-        // Cek apakah proyek ini baru saja disimpan oleh perangkat/sesi lain
         if (data.lastSavedBy && data.lastSavedBy !== TAB_SESSION_ID) {
             setStatusMsg({ text: 'Menyinkronkan Kolaborasi...', type: 'info' });
             
@@ -481,38 +487,27 @@ const App = () => {
                 let loadedUmum = []; let loadedProgres = [];
                 const initialHash = {};
                 
-                // PENCEGAH SHIFTING: Pastikan panjang array tetap akurat meski ada dokumen kosong
                 umumSnaps.forEach((pSnap, idx) => { 
                     if(pSnap.exists()) { 
-                        const pData = pSnap.data().data; 
-                        loadedUmum.push(pData); 
-                        initialHash[`${activeProjectId}_umum_${idx}`] = createPageHash(pData); // GUNAKAN SMART HASH
+                        const pData = pSnap.data().data; loadedUmum.push(pData); initialHash[`${activeProjectId}_umum_${idx}`] = createPageHash(pData);
                     } else {
-                        const blankPage = createNewPage();
-                        loadedUmum.push(blankPage);
-                        initialHash[`${activeProjectId}_umum_${idx}`] = createPageHash(blankPage); // GUNAKAN SMART HASH
+                        const blankPage = createNewPage(); loadedUmum.push(blankPage); initialHash[`${activeProjectId}_umum_${idx}`] = createPageHash(blankPage);
                     }
                 });
                 
                 progresSnaps.forEach((pSnap, idx) => { 
                     if(pSnap.exists()) { 
-                        const pData = pSnap.data().data; 
-                        loadedProgres.push(pData); 
-                        initialHash[`${activeProjectId}_progres_${idx}`] = createPageHash(pData); // GUNAKAN SMART HASH
+                        const pData = pSnap.data().data; loadedProgres.push(pData); initialHash[`${activeProjectId}_progres_${idx}`] = createPageHash(pData);
                     } else {
-                        const blankPage = createNewPage();
-                        loadedProgres.push(blankPage);
-                        initialHash[`${activeProjectId}_progres_${idx}`] = createPageHash(blankPage); // GUNAKAN SMART HASH
+                        const blankPage = createNewPage(); loadedProgres.push(blankPage); initialHash[`${activeProjectId}_progres_${idx}`] = createPageHash(blankPage);
                     }
                 });
 
-                // Perbarui Hash agar tidak bentrok
                 lastSavedHashRef.current = initialHash;
                 lastSavedHashRef.current.reportInfo = JSON.stringify(loadedInfo);
                 lastSavedHashRef.current.umumLength = loadedUmum.length;
                 lastSavedHashRef.current.progresLength = loadedProgres.length;
 
-                // Terapkan ke state layar
                 setReportInfo(loadedInfo);
                 setProjectAuthor(data.authorEmail || activeEmail);
                 setProjectTime(data.updatedAt || Date.now());
@@ -523,9 +518,7 @@ const App = () => {
 
                 setStatusMsg({ text: 'Tersinkronisasi Real-time!', type: 'success' });
                 setTimeout(() => setStatusMsg({ text: '', type: '' }), 2500);
-            } catch (e) {
-                console.error("Gagal Live Sync", e);
-            }
+            } catch (e) { console.error("Gagal Live Sync", e); }
         }
     });
 
@@ -648,22 +641,13 @@ const App = () => {
     }
   }, [view]);
 
-  // =========================================================================
-  // FUNGSI PENYIMPANAN SUPER HEMAT KUOTA & ATOMIC (Mencegah Ghost File)
-  // DILENGKAPI SMART HASH UNTUK SINKRONISASI KILAT
-  // =========================================================================
   const saveToCloudNow = async (id, info, pagesObj, type, emailToSave, timeToSave) => {
     if (!user || !id) return Promise.resolve(false);
     if (isOfflineMode || !db) return Promise.resolve(false);
     
-    // --- SIMPAN KE CACHE LOKAL UNTUK ANTI-REVERT ---
-    // Menyimpan data terbaru ke memori. Jika user Buka Laporan sebelum Firebase selesai,
-    // aplikasi akan mengambil data dari memori ini!
     projectCacheRef.current[id] = { info, pagesObj, type, timeToSave };
 
     if (isSavingRef.current) {
-        // --- PERBAIKAN BUG: JANGAN BUANG PERUBAHAN! ---
-        // Jika sedang upload tapi user ngetik/minta save, kita masukkan ke antrean!
         queuedSaveDataRef.current = { id, info, pagesObj, type, emailToSave, timeToSave };
         return Promise.resolve(false); 
     }
@@ -674,10 +658,9 @@ const App = () => {
     
     try {
       isSavingRef.current = true;
-      queuedSaveDataRef.current = null; // Kosongkan antrean karena sedang diproses
+      queuedSaveDataRef.current = null; 
       setSaveStatus('saving');
       
-      // --- PERBAIKAN: Sistem Cicil Berurutan (Sequential Chunking) ---
       let currentBatch = writeBatch(db);
       let opsCount = 0;
 
@@ -694,13 +677,11 @@ const App = () => {
           else currentBatch.set(ref, data);
           opsCount++;
 
-          // Kurangi jadi 5 agar beban jaringan sangat ringan & super cepat
           if (opsCount >= 5) {
               await commitBatch();
           }
       };
       
-      // 1. Simpan Informasi Proyek Utama
       const projRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_projects', id);
       await addToBatch(projRef, { 
         reportInfo: info, 
@@ -709,12 +690,11 @@ const App = () => {
         pageCountProgres: pagesObj.progres.length, 
         updatedAt: timeToSave || Date.now(), 
         authorEmail: emailToSave,
-        lastSavedBy: TAB_SESSION_ID // Tandai bahwa layar ini yang terakhir menyimpan
+        lastSavedBy: TAB_SESSION_ID 
       }, false);
 
       const isPageBlank = (pageData) => !pageData || pageData.every(p => !p.src && (!p.note || p.note.trim() === ''));
 
-      // Fungsi Helper untuk memproses halaman
       const processPagesToBatch = async (pages, typeStr, oldLength) => {
           for (let i = 0; i < pages.length; i++) {
               const currentHash = createPageHash(pages[i]);
@@ -730,7 +710,6 @@ const App = () => {
               }
           }
           
-          // HANYA menghapus halaman yang benar-benar dibuang
           for (let i = pages.length; i < oldLength; i++) {
               if (lastSavedHashRef.current[`${id}_${typeStr}_${i}`] !== undefined) {
                   const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_${typeStr}_page_${i}`);
@@ -743,19 +722,15 @@ const App = () => {
       const oldUmumLength = lastSavedHashRef.current.umumLength || pagesObj.umum.length;
       const oldProgresLength = lastSavedHashRef.current.progresLength || pagesObj.progres.length;
 
-      // 2. Eksekusi pengisian data ke dalam kantong Batch
       await processPagesToBatch(pagesObj.umum, 'umum', oldUmumLength);
       await processPagesToBatch(pagesObj.progres, 'progres', oldProgresLength);
       
-      // 3. Kirim sisa antrean terakhir
       await commitBatch();
 
-      // Mutakhirkan meta hash setelah semua berhasil
       lastSavedHashRef.current.reportInfo = JSON.stringify(info);
       lastSavedHashRef.current.umumLength = pagesObj.umum.length;
       lastSavedHashRef.current.progresLength = pagesObj.progres.length;
       
-      // Berhasil tersimpan, bukan lagi proyek tak bernama
       isNewlyCreatedRef.current = false;
 
       setSaveStatus('saved');
@@ -767,25 +742,21 @@ const App = () => {
       }
       return false;
     } finally {
-      isSavingRef.current = false; // Buka kembali kunci gembok antrean
+      isSavingRef.current = false; 
       
-      // --- PERBAIKAN BUG: CEK ANTREAN ---
-      // Jika tadi ada yang antre minta di-save (karena user ngetik saat loading/upload), eksekusi sekarang!
       if (queuedSaveDataRef.current) {
           const q = queuedSaveDataRef.current;
-          queuedSaveDataRef.current = null; // Bersihkan agar tidak looping
-          // Jalan di background secara otomatis!
+          queuedSaveDataRef.current = null; 
           saveToCloudNow(q.id, q.info, q.pagesObj, q.type, q.emailToSave, q.timeToSave);
       }
     }
   };
 
-  // --- SMART AUTOSAVE (KINI 30 DETIK & ANTI TABRAKAN) ---
   useEffect(() => {
     if (!user || !activeProjectId || view === 'dashboard' || isOfflineMode) return;
     
     const interval = setInterval(() => {
-      if (isSavingRef.current) return; // Jika yang sebelumnya belum selesai, tunda dulu!
+      if (isSavingRef.current) return; 
       
       const currentData = latestDataRef.current;
       if (!isProjectEmpty(currentData.reportInfo, currentData.pagesData)) {
@@ -794,7 +765,7 @@ const App = () => {
               saveToCloudNow(activeProjectId, currentData.reportInfo, currentData.pagesData, currentData.reportType, projectAuthor, isOwner ? Date.now() : projectTime);
           }
       }
-    }, 30000); // 30 detik untuk memberikan ruang napas pada upload internet lambat
+    }, 30000); 
 
     return () => clearInterval(interval);
   }, [activeProjectId, user, view, activeEmail, projectAuthor, projectTime, isOfflineMode]);
@@ -805,7 +776,7 @@ const App = () => {
     const newPages = { umum: [createNewPage()], progres: [createNewPage()] };
     const now = Date.now();
     
-    isNewlyCreatedRef.current = true; // PENANDA BAHWA INI PROYEK BARU
+    isNewlyCreatedRef.current = true; 
     
     lastSavedHashRef.current = {
         reportInfo: JSON.stringify(newInfo),
@@ -830,7 +801,7 @@ const App = () => {
     if (!user) { setStatusMsg({ text: 'Mode Offline', type: 'error' }); return; }
     if (isOfflineMode || !db) { setStatusMsg({ text: 'Mode Offline Aktif', type: 'error' }); setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000); return; }
     
-    isNewlyCreatedRef.current = false; // Ini proyek lama, jadi matikan penanda
+    isNewlyCreatedRef.current = false; 
     
     setActiveProjectId(project.id);
     setStatusMsg({ text: 'Menarik Foto...', type: 'info' });
@@ -841,8 +812,6 @@ const App = () => {
       const pAuthor = freshProjectData.authorEmail || project.authorEmail || activeEmail;
       const pTime = freshProjectData.updatedAt || project.updatedAt || Date.now();
 
-      // --- ANTI-REVERT: CEK CACHE LOKAL (OPTIMISTIC UI) ---
-      // Jika ada data antrean yang lebih baru di memori, pakai itu! Jangan tunggu Firebase
       const cache = projectCacheRef.current[project.id];
       if (cache && cache.timeToSave >= pTime) {
           setProjectAuthor(pAuthor);
@@ -866,9 +835,8 @@ const App = () => {
           setCurrentPage(sessionData?.currentPage || 1);
           setSaveStatus('saved');
           setStatusMsg({ text: '', type: '' });
-          return; // LANGSUNG SELESAI!
+          return; 
       }
-      // --------------------------------------------------
 
       setProjectAuthor(pAuthor);
       setProjectTime(pTime);
@@ -894,7 +862,6 @@ const App = () => {
       const [umumSnaps, progresSnaps] = await Promise.all([Promise.all(umumPromises), Promise.all(progresPromises)]);
       const initialHash = {};
 
-      // PENCEGAH SHIFTING: Ganti halaman yang dihapus (kosong) dengan kerangka kosong
       umumSnaps.forEach((pSnap, idx) => { 
           if(pSnap.exists()) { 
               const data = pSnap.data().data; 
@@ -918,7 +885,6 @@ const App = () => {
           }
       });
       
-      // Inisialisasi memori pembanding secara utuh!
       lastSavedHashRef.current = initialHash;
       lastSavedHashRef.current.reportInfo = JSON.stringify(loadedInfo);
       lastSavedHashRef.current.umumLength = loadedUmum.length;
@@ -948,7 +914,6 @@ const App = () => {
             const batch = writeBatch(db);
             batch.delete(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_projects', proj.id));
 
-            // Menggunakan Count aktual alih-alih 50 untuk sangat menghemat kuota
             const uCount = proj.pageCountUmum || 20;
             const pCount = proj.pageCountProgres || 20;
 
@@ -1140,26 +1105,20 @@ const App = () => {
         const now = Date.now();
         setActiveProjectId(newId);
         
-        isNewlyCreatedRef.current = true; // Penanda karena menggunakan ID baru
+        isNewlyCreatedRef.current = true; 
         
         let loadedInfo = data.reportInfo || defaultReportInfo;
         
-        // PERBAIKAN BUG: Kita TIDAK LAGI mengingat hash/sidik jari foto di awal.
-        // Biarkan saveToCloudNow mendeteksinya sebagai "data baru" agar foto dikirim ke database!
         const initialHash = { reportInfo: JSON.stringify(loadedInfo), umumLength: data.pagesData?.umum?.length || 0, progresLength: data.pagesData?.progres?.length || 0 }; 
         lastSavedHashRef.current = initialHash;
 
         setReportInfo(loadedInfo); setReportType(data.reportType || 'umum'); setPagesData(data.pagesData);
         setCurrentPage(1); setProjectAuthor(activeEmail); setProjectTime(now); setView('edit');
         
-        // --- PERBAIKAN UX: Jangan suruh user menunggu layar loading! ---
-        // Langsung tampilkan notifikasi sukses agar user bisa langsung bekerja
         setStatusMsg({ text: 'Berhasil Dibuka!', type: 'success' });
         setTimeout(() => setStatusMsg({ text: '', type: '' }), 1500);
         
-        // Lakukan sinkronisasi secara diam-diam di latar belakang (Background Sync)
         if (user && !isOfflineMode && !isProjectEmpty(loadedInfo, data.pagesData)) {
-            // Tidak perlu pakai await, biarkan proses berjalan sendiri
             saveToCloudNow(newId, loadedInfo, data.pagesData, data.reportType || 'umum', activeEmail, now);
         }
       } catch (err) { 
@@ -1197,12 +1156,11 @@ const App = () => {
       const img = new Image(); img.src = dataUrl;
       img.onload = () => {
         const canvas = document.createElement('canvas'); 
-        const max = 500; // --- DIKOMPRES LEBIH KECIL LAGI UNTUK UPLOAD INSTAN ---
+        const max = 500; 
         let w = img.width, h = img.height;
         if (w > max || h > max) { if (w > h) { h = Math.round((max / w) * h); w = max; } else { w = Math.round((max / h) * w); h = max; } }
         canvas.width = w; canvas.height = h; 
         const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, w, h);
-        // Menurunkan quality dari 0.6 ke 0.5. Masih sangat tajam untuk cetak PDF ukuran A4
         r(canvas.toDataURL('image/jpeg', 0.5)); 
       };
       img.onerror = () => r(null);
@@ -1544,20 +1502,35 @@ const App = () => {
       {view === 'dashboard' && (
         <main className="max-w-6xl mx-auto p-4 sm:p-8 animate-in fade-in duration-500">
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end mb-8 gap-6">
-            <div>
+            <div className="w-full lg:w-auto">
               <h2 className="text-2xl sm:text-3xl font-black text-slate-900 mb-2 flex items-center gap-2.5"><FolderOpen className="text-blue-600 w-8 h-8" /> Arsip Laporan</h2>
-              <p className="text-slate-500 font-medium text-xs sm:text-sm">Masuk sebagai: <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-md font-bold">{activeEmail}</span>{isAdmin && <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded-md font-bold text-[9px] ml-2 shadow-sm">👑 Admin</span>}</p>
+              <div className="flex items-center gap-2">
+                 <p className="text-slate-500 font-medium text-xs sm:text-sm">Masuk sebagai: <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-md font-bold">{activeEmail}</span>{isAdmin && <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded-md font-bold text-[9px] shadow-sm">👑 Admin</span>}</p>
+              </div>
+
+              {/* FITUR BARU: FILTER USER PILLS (TAMPILAN PREMIUM) */}
               {isAdmin && projects.length > 0 && (
-                <div className="mt-4 flex items-center gap-2 animate-in fade-in slide-in-from-left-4">
-                  <div className="flex items-center gap-1.5 text-[10px] font-black text-slate-400 uppercase tracking-widest"><Filter size={14} className="text-blue-500" /> FILTER:</div>
-                  <select value={filterEmail} onChange={e => setFilterEmail(e.target.value)} className="bg-white border-2 border-slate-200 text-slate-700 font-bold text-[10px] rounded-xl px-3 py-2 outline-none shadow-sm cursor-pointer transition-all">
-                    <option value="all">Tampilkan Semua</option>
-                    {uniqueAuthors.map(email => (<option key={email} value={email}>{email === activeEmail ? `${email} (Saya)` : email}</option>))}
-                  </select>
+                <div className="mt-6 flex flex-col gap-2 animate-in fade-in slide-in-from-left-4">
+                  <div className="flex items-center gap-1.5 text-[10px] font-black text-slate-400 uppercase tracking-widest"><Filter size={14} className="text-blue-500" /> FILTER PENGGUNA:</div>
+                  <div className="flex flex-wrap gap-2">
+                     <button onClick={() => setFilterEmail('all')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all border shadow-sm ${filterEmail === 'all' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50 hover:text-slate-700'}`}>Semua ({projects.length})</button>
+                     {uniqueAuthors.map(email => {
+                       const theme = getUserColorTheme(email);
+                       const isActive = filterEmail === email;
+                       const userProjectCount = projects.filter(p => p.authorEmail === email).length;
+                       return (
+                         <button key={email} onClick={() => setFilterEmail(email)} className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase transition-all border shadow-sm ${isActive ? `${theme.bg} ${theme.text} ${theme.border} ring-2 ring-offset-2 ring-${theme.border.split('-')[1]}-400` : `bg-white text-slate-500 border-slate-200 hover:bg-slate-50 hover:text-slate-700`}`}>
+                           <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] text-white shadow-sm ${theme.solid}`}>{theme.initial}</span>
+                           <span className="max-w-[120px] truncate">{email.split('@')[0]}</span>
+                           <span className={`ml-1 px-1.5 py-0.5 rounded text-[9px] ${isActive ? 'bg-white/50' : 'bg-slate-100 text-slate-400'}`}>{userProjectCount}</span>
+                         </button>
+                       );
+                     })}
+                  </div>
                 </div>
               )}
             </div>
-            <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
+            <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto mt-4 lg:mt-0 shrink-0">
               {isAdmin && <button onClick={() => setShowAccessModal(true)} className="w-full sm:w-auto bg-slate-800 text-white px-4 sm:px-6 py-3.5 rounded-2xl font-black uppercase text-[10px] sm:text-xs flex items-center justify-center gap-2 shadow-lg transition-all active:scale-95"><User size={16}/> AKSES</button>}
               <label className="w-full sm:w-auto bg-white text-blue-600 border-2 border-blue-600 px-4 sm:px-6 py-3.5 rounded-2xl font-black uppercase text-[10px] sm:text-xs flex items-center justify-center gap-2 shadow-lg cursor-pointer transition-all active:scale-95"><UploadCloud size={16}/> BUKA MENTAHAN<input type="file" accept=".json" onChange={loadMentahan} className="hidden" /></label>
               <button onClick={createNewProject} className="w-full sm:w-auto bg-blue-600 text-white px-4 sm:px-8 py-3.5 rounded-2xl font-black uppercase text-[10px] sm:text-xs flex items-center justify-center gap-2 shadow-xl shadow-blue-500/30 transition-all active:scale-95"><Plus size={16}/> BUAT LAPORAN</button>
@@ -1583,47 +1556,62 @@ const App = () => {
                    <div className="w-12 h-12 rounded-2xl bg-orange-50 text-orange-600 flex items-center justify-center shrink-0"><Activity size={24}/></div>
                    <div className="overflow-hidden w-full"><p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5 truncate">Aktivitas Terbaru</p>
                      <h3 className="text-[11px] font-bold text-slate-800 leading-tight">
-                       {filteredProjects.length > 0 && filteredProjects[0] ? new Date(filteredProjects[0].updatedAt).toLocaleString('id-ID', {day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'}) : '-'}
+                       {filteredProjects.length > 0 && filteredProjects[0] ? new Date(filteredProjects[0].updatedAt || Date.now()).toLocaleString('id-ID', {day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'}) : '-'}
                      </h3>
-                     {filteredProjects.length > 0 && filteredProjects[0]?.authorEmail && (<p className="text-[9px] text-slate-500 font-medium truncate mt-0.5">Oleh: <span className="text-blue-600">{filteredProjects[0].authorEmail}</span></p>)}
+                     {filteredProjects.length > 0 && filteredProjects[0]?.authorEmail && (<p className="text-[9px] text-slate-500 font-medium truncate mt-0.5">Oleh: <span className="text-blue-600">{filteredProjects[0].authorEmail.split('@')[0]}</span></p>)}
                    </div>
                 </div>
               </div>
             </div>
           )}
 
-          <div className="flex items-center justify-between mb-4 border-t border-slate-200 pt-8">
-            <h3 className="text-xl font-black text-slate-800 flex items-center gap-2"><ClipboardList className="text-blue-500"/> Daftar Laporan Tersimpan</h3>
-          </div>
-
           {filteredProjects.length === 0 ? (
-            <div className="bg-white rounded-[32px] border-2 border-dashed border-slate-300 p-10 flex flex-col items-center justify-center text-center">
+            <div className="bg-white rounded-[32px] border-2 border-dashed border-slate-300 p-10 flex flex-col items-center justify-center text-center mt-10">
               <ClipboardList size={48} className="text-slate-300 mb-4" />
               <h3 className="text-lg font-black text-slate-600 mb-2">Belum Ada Laporan</h3>
-              <p className="text-slate-400 text-xs sm:text-sm">{filterEmail !== 'all' ? 'User ini belum memiliki laporan.' : 'Klik buat laporan baru untuk memulai.'}</p>
+              <p className="text-slate-400 text-xs sm:text-sm">{filterEmail !== 'all' ? 'Pengguna ini belum memiliki laporan.' : 'Klik buat laporan baru untuk memulai.'}</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-              {filteredProjects.map(p => (
-                <div key={p.id} className="bg-white rounded-[24px] p-5 shadow-xl border border-slate-200 hover:border-blue-400 transition-all flex flex-col hover:-translate-y-1">
-                  <div className="flex justify-between items-start mb-3">
-                     <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase bg-blue-100 text-blue-700">DOKUMENTASI</span>
-                     <button onClick={(e) => { e.stopPropagation(); setShowDeleteProjectModal({show: true, project: p}); }} className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg transition-all"><Trash2 size={16}/></button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6 mt-6">
+              {filteredProjects.map(p => {
+                const uTheme = getUserColorTheme(p.authorEmail);
+                return (
+                  <div key={p.id} onClick={() => openProject(p)} className="bg-white rounded-[24px] p-5 shadow-sm hover:shadow-xl border border-slate-200 hover:border-blue-400 transition-all flex flex-col hover:-translate-y-1 cursor-pointer group">
+                    <div className="flex justify-between items-start mb-4">
+                       <div className={`flex items-center gap-2 px-2.5 py-1.5 rounded-xl border ${uTheme.bg} ${uTheme.text} ${uTheme.border}`}>
+                          <div className={`w-5 h-5 rounded-full flex items-center justify-center font-black text-[10px] text-white shadow-sm ${uTheme.solid}`}>
+                            {uTheme.initial}
+                          </div>
+                          <span className="text-[9px] font-black uppercase tracking-wider max-w-[120px] truncate" title={p.authorEmail}>
+                            {(p.authorEmail || 'Anonim').split('@')[0]}
+                          </span>
+                       </div>
+                       <button onClick={(e) => { e.stopPropagation(); setShowDeleteProjectModal({show: true, project: p}); }} className="p-1.5 bg-white border border-slate-100 text-slate-400 hover:text-white hover:bg-red-500 hover:border-red-500 rounded-lg transition-all shadow-sm"><Trash2 size={14}/></button>
+                    </div>
+                    
+                    <h3 className="text-sm font-black text-slate-800 mb-4 line-clamp-2 leading-snug group-hover:text-blue-600 transition-colors">{p.reportInfo?.title || 'Laporan Tanpa Judul'}</h3>
+                    
+                    <div className="space-y-2.5 mb-5 flex-grow text-[10px] text-slate-500 font-medium">
+                      {p.reportInfo?.customMeta?.[0]?.value && (
+                         <div className="flex items-center gap-2 truncate bg-slate-50 px-2.5 py-2 rounded-lg border border-slate-100">
+                           <Briefcase size={12} className="text-slate-400 shrink-0" /> 
+                           <span className="truncate">{p.reportInfo.customMeta[0].value}</span>
+                         </div>
+                      )}
+                      <div className="flex items-center justify-between px-1 pt-1 mt-1 border-t border-slate-50">
+                         <div className="flex items-center gap-1.5" title="Waktu Update Terakhir">
+                           <Calendar size={12} className="text-blue-400 shrink-0"/> 
+                           <span className="text-[9px] tracking-tight">{new Date(p.updatedAt || Date.now()).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                         </div>
+                         <div className="flex items-center gap-1.5" title="Jumlah Halaman">
+                           <FileText size={12} className={p.lastActiveTab === 'progres' ? 'text-emerald-400 shrink-0' : 'text-blue-400 shrink-0'}/> 
+                           <span>{p.lastActiveTab === 'progres' ? (p.pageCountProgres || 1) : (p.pageCountUmum || 1)} Hal</span>
+                         </div>
+                      </div>
+                    </div>
                   </div>
-                  <h3 className="text-base font-black text-slate-800 mb-3 line-clamp-2">{p.reportInfo?.title || 'Laporan'}</h3>
-                  <div className="space-y-1.5 mb-4 flex-grow text-[10px] text-slate-500 font-medium">
-                    <div className="flex items-center gap-2 truncate"><Briefcase size={12} /> {p.reportInfo?.customMeta?.[0]?.value || '-'}</div>
-                    {isAdmin && (
-                      <>
-                        <div className="flex items-center gap-2 truncate"><User size={12} /> Oleh: <strong className="text-slate-600">{p.authorEmail || 'Anonim'}</strong></div>
-                        <div className="flex items-center gap-2"><Calendar size={12} /> {new Date(p.updatedAt || Date.now()).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
-                      </>
-                    )}
-                    <div className="flex items-center gap-2"><FileText size={12} /> {p.lastActiveTab === 'progres' ? (p.pageCountProgres || 1) : (p.pageCountUmum || 1)} Halaman</div>
-                  </div>
-                  <button onClick={() => openProject(p)} className="w-full bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 py-2.5 rounded-xl font-black text-[10px] uppercase transition-all flex justify-center items-center gap-2">Buka Laporan <ChevronRight size={14} /></button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </main>
