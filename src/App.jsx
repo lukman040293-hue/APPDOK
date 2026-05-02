@@ -663,27 +663,32 @@ const App = () => {
       isSavingRef.current = true;
       setSaveStatus('saving');
       
-      // --- PERBAIKAN: Sistem Cicil (Chunk) agar tidak meledakkan batas 10MB Firebase ---
+      // --- PERBAIKAN: Sistem Cicil Berurutan (Sequential Chunking) ---
       let currentBatch = writeBatch(db);
       let opsCount = 0;
-      const batchPromises = [];
 
-      const addToBatch = (ref, data, isDelete) => {
+      const commitBatch = async () => {
+          if (opsCount > 0) {
+              await currentBatch.commit();
+              currentBatch = writeBatch(db);
+              opsCount = 0;
+          }
+      };
+
+      const addToBatch = async (ref, data, isDelete) => {
           if (isDelete) currentBatch.delete(ref);
           else currentBatch.set(ref, data);
           opsCount++;
 
-          // Jika sudah 10 operasi/halaman, kita kirim sekarang dan buat keranjang baru!
-          if (opsCount >= 10) {
-              batchPromises.push(currentBatch.commit());
-              currentBatch = writeBatch(db);
-              opsCount = 0;
+          // Kurangi jadi 5 agar beban jaringan sangat ringan & super cepat
+          if (opsCount >= 5) {
+              await commitBatch();
           }
       };
       
       // 1. Simpan Informasi Proyek Utama
       const projRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_projects', id);
-      addToBatch(projRef, { 
+      await addToBatch(projRef, { 
         reportInfo: info, 
         lastActiveTab: type, 
         pageCountUmum: pagesObj.umum.length, 
@@ -696,16 +701,16 @@ const App = () => {
       const isPageBlank = (pageData) => !pageData || pageData.every(p => !p.src && (!p.note || p.note.trim() === ''));
 
       // Fungsi Helper untuk memproses halaman
-      const processPagesToBatch = (pages, typeStr, oldLength) => {
+      const processPagesToBatch = async (pages, typeStr, oldLength) => {
           for (let i = 0; i < pages.length; i++) {
               const currentHash = createPageHash(pages[i]);
               
               if (lastSavedHashRef.current[`${id}_${typeStr}_${i}`] !== currentHash) {
                   const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_${typeStr}_page_${i}`);
                   if (isPageBlank(pages[i])) {
-                      addToBatch(pageRef, null, true);
+                      await addToBatch(pageRef, null, true);
                   } else {
-                      addToBatch(pageRef, { index: i, projectId: id, type: typeStr, data: pages[i] }, false);
+                      await addToBatch(pageRef, { index: i, projectId: id, type: typeStr, data: pages[i] }, false);
                   }
                   lastSavedHashRef.current[`${id}_${typeStr}_${i}`] = currentHash;
               }
@@ -715,7 +720,7 @@ const App = () => {
           for (let i = pages.length; i < oldLength; i++) {
               if (lastSavedHashRef.current[`${id}_${typeStr}_${i}`] !== undefined) {
                   const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_${typeStr}_page_${i}`);
-                  addToBatch(pageRef, null, true);
+                  await addToBatch(pageRef, null, true);
                   delete lastSavedHashRef.current[`${id}_${typeStr}_${i}`];
               }
           }
@@ -725,16 +730,11 @@ const App = () => {
       const oldProgresLength = lastSavedHashRef.current.progresLength || pagesObj.progres.length;
 
       // 2. Eksekusi pengisian data ke dalam kantong Batch
-      processPagesToBatch(pagesObj.umum, 'umum', oldUmumLength);
-      processPagesToBatch(pagesObj.progres, 'progres', oldProgresLength);
+      await processPagesToBatch(pagesObj.umum, 'umum', oldUmumLength);
+      await processPagesToBatch(pagesObj.progres, 'progres', oldProgresLength);
       
       // 3. Kirim sisa antrean terakhir
-      if (opsCount > 0) {
-          batchPromises.push(currentBatch.commit());
-      }
-
-      // Tunggu semua cicilan terkirim dengan aman
-      await Promise.all(batchPromises);
+      await commitBatch();
 
       // Mutakhirkan meta hash setelah semua berhasil
       lastSavedHashRef.current.reportInfo = JSON.stringify(info);
@@ -1097,14 +1097,16 @@ const App = () => {
         setReportInfo(loadedInfo); setReportType(data.reportType || 'umum'); setPagesData(data.pagesData);
         setCurrentPage(1); setProjectAuthor(activeEmail); setProjectTime(now); setView('edit');
         
+        // --- PERBAIKAN UX: Jangan suruh user menunggu layar loading! ---
+        // Langsung tampilkan notifikasi sukses agar user bisa langsung bekerja
+        setStatusMsg({ text: 'Berhasil Dibuka!', type: 'success' });
+        setTimeout(() => setStatusMsg({ text: '', type: '' }), 1500);
+        
+        // Lakukan sinkronisasi secara diam-diam di latar belakang (Background Sync)
         if (user && !isOfflineMode && !isProjectEmpty(loadedInfo, data.pagesData)) {
-            setStatusMsg({ text: 'Sinkronisasi ke Cloud...', type: 'info' });
-            await saveToCloudNow(newId, loadedInfo, data.pagesData, data.reportType || 'umum', activeEmail, now);
-            setStatusMsg({ text: 'Selesai & Tersinkron!', type: 'success' });
-        } else {
-            setStatusMsg({ text: 'Selesai!', type: 'success' });
+            // Tidak perlu pakai await, biarkan proses berjalan sendiri
+            saveToCloudNow(newId, loadedInfo, data.pagesData, data.reportType || 'umum', activeEmail, now);
         }
-        setTimeout(() => setStatusMsg({ text: '', type: '' }), 2500);
       } catch (err) { 
         console.error("Kesalahan muat:", err);
         setStatusMsg({ text: 'Gagal / File Rusak', type: 'error' }); 
