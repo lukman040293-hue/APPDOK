@@ -247,6 +247,7 @@ const App = () => {
   const latestDataRef = useRef({ reportInfo, pagesData, reportType }); // Ref untuk mencegah reset interval autosave
   const [isOfflineMode, setIsOfflineMode] = useState(false); 
   const isNewlyCreatedRef = useRef(false); // PENANDA PROYEK BARU UNTUK MENCEGAH TENDANGAN LIVE SYNC
+  const isSavingRef = useRef(false); // ANTI TABRAKAN AUTOSAVE (LOCK)
   
   const [showClearModal, setShowClearModal] = useState(false);
   const [showDeleteProjectModal, setShowDeleteProjectModal] = useState({ show: false, project: null });
@@ -299,7 +300,6 @@ const App = () => {
     if (pagesObj.progres.length !== (lastSavedHashRef.current.progresLength || 0)) return true;
 
     for (let i = 0; i < pagesObj.umum.length; i++) {
-        // Menggunakan Hash Cepat, bukan JSON Stringify Raksasa
         if (createPageHash(pagesObj.umum[i]) !== lastSavedHashRef.current[`${id}_umum_${i}`]) return true;
     }
     for (let i = 0; i < pagesObj.progres.length; i++) {
@@ -653,12 +653,14 @@ const App = () => {
   const saveToCloudNow = async (id, info, pagesObj, type, emailToSave, timeToSave) => {
     if (!user || !id) return Promise.resolve(false);
     if (isOfflineMode || !db) return Promise.resolve(false);
+    if (isSavingRef.current) return Promise.resolve(false); // CEGAH TABRAKAN PENGIRIMAN
     
     if (isProjectEmpty(info, pagesObj)) {
         return Promise.resolve(false); 
     }
     
     try {
+      isSavingRef.current = true;
       setSaveStatus('saving');
       
       const batch = writeBatch(db);
@@ -736,14 +738,18 @@ const App = () => {
          triggerOfflineMode();
       }
       return false;
+    } finally {
+      isSavingRef.current = false; // Buka kembali kunci gembok antrean
     }
   };
 
-  // --- SMART AUTOSAVE (15 Detik) ---
+  // --- SMART AUTOSAVE (KINI 30 DETIK & ANTI TABRAKAN) ---
   useEffect(() => {
     if (!user || !activeProjectId || view === 'dashboard' || isOfflineMode) return;
     
     const interval = setInterval(() => {
+      if (isSavingRef.current) return; // Jika yang sebelumnya belum selesai, tunda dulu!
+      
       const currentData = latestDataRef.current;
       if (!isProjectEmpty(currentData.reportInfo, currentData.pagesData)) {
           if (checkHasChanges(activeProjectId, currentData.reportInfo, currentData.pagesData)) {
@@ -751,7 +757,7 @@ const App = () => {
               saveToCloudNow(activeProjectId, currentData.reportInfo, currentData.pagesData, currentData.reportType, projectAuthor, isOwner ? Date.now() : projectTime);
           }
       }
-    }, 15000); 
+    }, 30000); // 30 detik untuk memberikan ruang napas pada upload internet lambat
 
     return () => clearInterval(interval);
   }, [activeProjectId, user, view, activeEmail, projectAuthor, projectTime, isOfflineMode]);
@@ -1069,10 +1075,9 @@ const App = () => {
         
         let loadedInfo = data.reportInfo || defaultReportInfo;
         
-        // Mempersiapkan hash awal menggunakan Smart Hash
+        // PERBAIKAN BUG: Kita TIDAK LAGI mengingat hash/sidik jari foto di awal.
+        // Biarkan saveToCloudNow mendeteksinya sebagai "data baru" agar foto dikirim ke database!
         const initialHash = { reportInfo: JSON.stringify(loadedInfo), umumLength: data.pagesData?.umum?.length || 0, progresLength: data.pagesData?.progres?.length || 0 }; 
-        if (data.pagesData?.umum) data.pagesData.umum.forEach((p, idx) => { initialHash[`${newId}_umum_${idx}`] = createPageHash(p); });
-        if (data.pagesData?.progres) data.pagesData.progres.forEach((p, idx) => { initialHash[`${newId}_progres_${idx}`] = createPageHash(p); });
         lastSavedHashRef.current = initialHash;
 
         setReportInfo(loadedInfo); setReportType(data.reportType || 'umum'); setPagesData(data.pagesData);
@@ -1120,13 +1125,13 @@ const App = () => {
       const img = new Image(); img.src = dataUrl;
       img.onload = () => {
         const canvas = document.createElement('canvas'); 
-        const max = 640;
+        const max = 500; // --- DIKOMPRES LEBIH KECIL LAGI UNTUK UPLOAD INSTAN ---
         let w = img.width, h = img.height;
         if (w > max || h > max) { if (w > h) { h = Math.round((max / w) * h); w = max; } else { w = Math.round((max / h) * w); h = max; } }
         canvas.width = w; canvas.height = h; 
         const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, w, h);
-        // Menurunkan sedikit quality dari 0.65 ke 0.6 untuk mempercepat upload internet tanpa merusak PDF
-        r(canvas.toDataURL('image/jpeg', 0.6)); 
+        // Menurunkan quality dari 0.6 ke 0.5. Masih sangat tajam untuk cetak PDF ukuran A4
+        r(canvas.toDataURL('image/jpeg', 0.5)); 
       };
       img.onerror = () => r(null);
     });
