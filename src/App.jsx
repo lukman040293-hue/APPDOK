@@ -6,19 +6,43 @@ import {
   ArrowLeft, Calendar, Briefcase, FileText, Loader2, WifiOff, 
   HardDrive, UploadCloud, Lock, User, LogOut, ZoomIn, ZoomOut, 
   Maximize, Palette, Filter, Save, FileStack, Layers, Activity, 
-  BarChart3, PieChart, Users, Share2, Check
+  Users, Share2 
 } from 'lucide-react';
 
-// --- ID Sesi Unik Untuk Real-Time Sync Antar Perangkat ---
+// --- ID Sesi Unik ---
 const TAB_SESSION_ID = Math.random().toString(36).substring(2, 15);
 
-// --- ALGORITMA "SMART FINGERPRINT" UNTUK MEMPERCEPAT DETEKSI SINKRONISASI ---
+// --- FIREBASE IMPORTS ---
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, doc, setDoc, getDoc, collection, deleteDoc, onSnapshot, writeBatch } from 'firebase/firestore';
+
+// --- INISIALISASI FIREBASE ---
+let app, auth, db, appId;
+try {
+  const config = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+      apiKey: "AIzaSyCvMuSGrojku0-UM4tWaNTK2EDlgqjWAlM",
+      authDomain: "apdok-f9052.firebaseapp.com",
+      projectId: "apdok-f9052",
+      storageBucket: "apdok-f9052.firebasestorage.app",
+      messagingSenderId: "839994843119",
+      appId: "1:839994843119:web:2590957adb4e6f1ce7a01a"
+  };
+  app = initializeApp(config);
+  auth = getAuth(app);
+  db = getFirestore(app);
+  appId = typeof __app_id !== 'undefined' ? __app_id : config.projectId;
+} catch (e) {
+  console.error("Gagal inisialisasi Firebase", e);
+}
+
+// --- ALGORITMA "SMART FINGERPRINT" ---
 const createPageHash = (pageData) => {
   if (!pageData) return "null";
   try {
     const lightData = pageData.map(p => ({
-      n: p.note, b: p.brightness, s: p.saturation, z: p.zoom, x: p.panX, y: p.panY, prog: p.progress,
-      id: p.src ? p.src.substring(0, 30) + p.src.length : null 
+      n: p?.note, b: p?.brightness, s: p?.saturation, z: p?.zoom, x: p?.panX, y: p?.panY, prog: p?.progress,
+      id: p?.src ? p.src.substring(0, 30) + p.src.length : null 
     }));
     return JSON.stringify(lightData);
   } catch (e) {
@@ -47,7 +71,6 @@ const getUserColorTheme = (email) => {
   ];
   let hash = 0;
   for (let i = 0; i < email.length; i++) {
-    // Algoritma perkalian yang jauh lebih sensitif terhadap perubahan 1 huruf/angka
     hash += email.charCodeAt(i) * (i + 1) * 11;
   }
   const theme = colors[hash % colors.length];
@@ -75,41 +98,73 @@ console.error = (...args) => {
   originalConsoleError.apply(console, args);
 };
 
-// --- FIREBASE IMPORTS ---
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, getDoc, collection, deleteDoc, onSnapshot, writeBatch, terminate } from 'firebase/firestore';
-
-// --- INISIALISASI FIREBASE ---
-const firebaseConfig = {
-  apiKey: "AIzaSyCvMuSGrojku0-UM4tWaNTK2EDlgqjWAlM",
-  authDomain: "apdok-f9052.firebaseapp.com",
-  projectId: "apdok-f9052",
-  storageBucket: "apdok-f9052.firebasestorage.app",
-  messagingSenderId: "839994843119",
-  appId: "1:839994843119:web:2590957adb4e6f1ce7a01a",
-  measurementId: "G-MQX0Q3ZPC0"
-};
-
-let app, auth, db, appId;
-try {
-  app = initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  db = getFirestore(app);
-  appId = firebaseConfig.projectId;
-} catch (e) {
-  originalConsoleError("Gagal inisialisasi Firebase", e);
-}
-
+// --- AKSES DEFAULT ---
 const DEFAULT_EMAIL_IZIN = ['at.file2020@gmail.com', 'admin@gmail.com'];
 const DEFAULT_ADMIN = ['admin@gmail.com', 'at.file2020@gmail.com'];
 
-const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleFileUpload }) => {
-  const [tab, setTab] = useState('filter');
-  const { zoom = 100, panX = 50, panY = 50, brightness = 100, saturation = 100, progress = 0 } = p;
+// --- KOMPONEN CETAK HALAMAN (Diekstrak agar performa lebih cepat) ---
+const ReportPage = ({ data, isFinal = false, reportInfo, reportType }) => {
+  const template = reportInfo?.template || 'klasik';
+  const cMeta = reportInfo?.customMeta || [];
+  const meta = [...cMeta.map(m => ({ l: m.label, v: m.value })), { l: "Tahun", v: reportInfo?.date }];
+  const isModern = template === 'modern';
+  
+  const baseFontClass = isModern ? 'font-serif text-slate-800' : 'font-sans text-black';
+  const headerTitleClass = isModern ? 'text-indigo-950 tracking-wide font-bold' : 'text-slate-900 font-black';
+  let headerBorderClass = isModern ? (reportType === 'progres' ? 'border-b-4 border-emerald-700' : 'border-b-4 border-indigo-800') : (reportType === 'progres' ? 'border-b-2 border-emerald-500' : 'border-b-2 border-slate-900');
+  
+  const gridLineClass = isModern 
+      ? (reportType === 'progres' ? 'border-emerald-300' : 'border-indigo-300')
+      : 'border-slate-800'; 
+
+  const imgContainerClass = isModern ? `rounded-xl border-2 ${reportType === 'progres' ? 'border-emerald-500' : 'border-indigo-500'}` : 'rounded-sm border border-slate-300';
+  let noteBorderClass = isModern ? (reportType === 'progres' ? 'border-emerald-600' : 'border-indigo-500') : (reportType === 'progres' ? 'border-emerald-500' : 'border-slate-800');
 
   return (
-    <div className="bg-white rounded-[32px] sm:rounded-[48px] shadow-xl overflow-hidden flex flex-col group border-2 border-transparent hover:border-blue-500 transition-all duration-500 hover:shadow-2xl relative">
+    <div className={`bg-white w-[210mm] flex flex-col ${baseFontClass} relative box-border ${isFinal ? 'report-page-final' : 'mb-10 shadow-2xl rounded-sm border border-slate-200 shrink-0'}`} style={{ height: '296.7mm', padding: '6mm 15mm 15mm 15mm', margin: '0 auto', pageBreakAfter: 'always' }}>
+      <div className={`text-center pb-3 mb-4 flex-none ${headerBorderClass}`}>
+        <div className="flex justify-start items-center gap-6 mb-3 h-12">
+          {(reportInfo?.logos || []).map((l, i) => l && <img key={i} src={l} className="h-full w-auto object-contain object-left" alt="" />)}
+        </div>
+        <h2 className={`text-xl uppercase mb-3 leading-tight ${headerTitleClass}`}>{reportInfo?.title}</h2>
+        
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-left">
+          {meta.map((m, idx) => (
+            <div key={idx} className="flex items-start uppercase text-[7.5pt] tracking-tight">
+              <span className="w-24 shrink-0 font-bold text-slate-500">{m.l}</span>
+              <span className="mr-1.5 font-bold text-slate-500">:</span>
+              <span className="font-black flex-1 break-words leading-tight text-slate-900">{m.v || '-'}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className={`grid grid-cols-2 flex-grow content-start border-t-[1.5px] border-l-[1.5px] ${gridLineClass}`}>
+        {(data || []).map((p, i) => (
+          <div key={i} className={`p-3 flex flex-col h-[74.5mm] bg-white box-border border-r-[1.5px] border-b-[1.5px] ${gridLineClass}`}>
+            <div className={`h-[48mm] bg-slate-50 relative overflow-hidden flex items-center justify-center ${imgContainerClass}`}>
+              {p?.src ? <img src={p.src} className="w-full h-full object-cover" style={{ filter: `brightness(${p?.brightness || 100}%) saturate(${p?.saturation || 100}%)`, transform: `scale(${(p?.zoom || 100) / 100})`, transformOrigin: `${p?.panX ?? 50}% ${p?.panY ?? 50}%` }} alt="" /> : <ImageIcon size={30} className="text-slate-200" />}
+            </div>
+            <div className={`mt-2.5 border-l-[3px] pl-2.5 overflow-hidden flex-1 ${noteBorderClass}`}>
+              <div className="flex items-center justify-between mb-0.5">
+                <div className="text-[6.5pt] font-black text-slate-400 uppercase tracking-tighter">KETERANGAN:</div>
+                {reportType === 'progres' && p?.src && <div className="text-[7pt] font-black text-slate-900 bg-slate-100 px-1.5 py-0.5 rounded-sm border border-slate-300">PROGRES: {p.progress || 0}%</div>}
+              </div>
+              <p className={`text-[8.5pt] leading-tight italic line-clamp-3 ${isModern ? 'text-slate-800' : 'text-slate-800 font-medium'}`}>{p?.note || '-'}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// --- KOMPONEN KARTU FOTO ---
+const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleFileUpload }) => {
+  const [tab, setTab] = useState('filter');
+  const { zoom = 100, panX = 50, panY = 50, brightness = 100, saturation = 100, progress = 0 } = p || {};
+
+  return (
+    <div className="bg-white rounded-[32px] sm:rounded-[48px] shadow-xl overflow-hidden flex flex-col group border-2 border-transparent hover:border-blue-500 transition-all duration-500 hover:shadow-2xl">
       <div className="h-52 sm:h-60 bg-slate-50 flex items-center justify-center relative border-b border-slate-100 overflow-hidden">
         {p?.src ? (
           <>
@@ -127,11 +182,11 @@ const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleF
           <div className="flex flex-col gap-3 w-full px-6 sm:px-10 text-center">
             <label className={`w-full text-white py-3 sm:py-4 rounded-2xl sm:rounded-3xl text-[10px] font-black uppercase cursor-pointer flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all ${reportType === 'progres' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-blue-600 hover:bg-blue-500'}`}>
               <Camera size={18} className="sm:w-5 sm:h-5"/> AMBIL KAMERA
-              <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFileUpload} />
+              <input type="file" accept="image/jpeg, image/png, image/webp" capture="environment" className="hidden" onChange={handleFileUpload} />
             </label>
             <label className="w-full cursor-pointer bg-slate-100 text-slate-500 py-3 sm:py-3.5 rounded-2xl sm:rounded-3xl text-[10px] font-black uppercase flex items-center justify-center gap-2 active:scale-95 hover:bg-slate-200 transition-all">
               <ImageIcon size={16} className="sm:w-4 sm:h-4"/> PILIH GALERI
-              <input type="file" accept="image/*" className="hidden" onChange={handleFileUpload} />
+              <input type="file" accept="image/jpeg, image/png, image/webp" className="hidden" onChange={handleFileUpload} />
             </label>
           </div>
         )}
@@ -218,6 +273,7 @@ const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleF
   );
 };
 
+// --- APLIKASI UTAMA ---
 const App = () => {
   const createNewPage = () => Array(6).fill(null).map(() => ({ id: Date.now() + Math.random(), src: null, note: '', brightness: 100, saturation: 100, progress: 0, zoom: 100, panX: 50, panY: 50 }));
   const defaultReportInfo = { 
@@ -290,7 +346,6 @@ const App = () => {
   const [previewZoom, setPreviewZoom] = useState(1);
   const [filterEmail, setFilterEmail] = useState('all'); 
 
-  // --- Merekam Data Terkini untuk Keperluan Autosave tanpa mereset timer ---
   useEffect(() => {
     latestDataRef.current = { reportInfo, pagesData, reportType };
   }, [reportInfo, pagesData, reportType]);
@@ -377,7 +432,11 @@ const App = () => {
   useEffect(() => {
     const initAuth = async () => {
       try {
-        await signInAnonymously(auth);
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
         setDebugError(''); 
       } catch (err) {
         setDebugError(err.message); 
@@ -702,7 +761,7 @@ const App = () => {
         lastSavedBy: TAB_SESSION_ID 
       }, false);
 
-      const isPageBlank = (pageData) => !pageData || pageData.every(p => !p.src && (!p.note || p.note.trim() === ''));
+      const isPageBlank = (pageData) => !pageData || pageData.every(p => !p?.src && (!p?.note || p.note.trim() === ''));
 
       const processPagesToBatch = async (pages, typeStr, oldLength) => {
           for (let i = 0; i < pages.length; i++) {
@@ -1003,7 +1062,7 @@ const App = () => {
     try {
       const processed = await Promise.all(pages.map(async (page) => {
         return await Promise.all(page.map(async (photo) => {
-          if (!photo.src) return photo;
+          if (!photo?.src) return photo;
           const isModified = photo.brightness !== 100 || photo.saturation !== 100 || photo.zoom !== 100 || photo.panX !== 50 || photo.panY !== 50;
           if (isModified) {
               const finalSrc = await bakeImageFilters(photo.src, photo.brightness, photo.saturation, photo.zoom, photo.panX, photo.panY);
@@ -1026,10 +1085,9 @@ const App = () => {
     });
     if(!isLibraryReady.pdf) {
       Promise.all([
-        loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', 'lib-jspdf'),
-        loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', 'lib-h2c'),
+        loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js', 'lib-pdf'),
         loadScript('https://cdn.jsdelivr.net/gh/gitbrent/PptxGenJS@3.12.0/dist/pptxgen.bundle.js', 'lib-ppt')
-      ]).then(() => setIsLibraryReady({ pdf: !!window.jspdf && !!window.html2canvas, ppt: !!window.PptxGenJS }));
+      ]).then(() => setIsLibraryReady({ pdf: !!window.html2pdf, ppt: !!window.PptxGenJS }));
     }
   }, [isLibraryReady.pdf]);
 
@@ -1041,47 +1099,40 @@ const App = () => {
         await Promise.all(Array.from(images).map(img => img.complete ? Promise.resolve() : new Promise(r => img.onload = r)));
         const cleanTitle = reportInfo.title.replace(/ /g, '_');
         
-        const clonedContainer = document.createElement('div');
-        clonedContainer.style.position = 'absolute';
-        clonedContainer.style.top = '-10000px';
-        const clonedElement = element.cloneNode(true);
-        clonedContainer.appendChild(clonedElement);
-        document.body.appendChild(clonedContainer);
+        const options = { 
+            margin: 0, 
+            filename: `${cleanTitle}.pdf`, 
+            image: { type: 'jpeg', quality: 0.85 }, 
+            html2canvas: { scale: 1.5, useCORS: true, width: 794, windowWidth: 794, scrollX: 0, scrollY: 0, x: 0, y: 0 }, 
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } 
+        };
 
         try { 
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF('p', 'mm', 'a4');
-            const pagesElements = clonedElement.querySelectorAll('.report-page-final');
-
-            for (let i = 0; i < pagesElements.length; i++) {
-                setStatusMsg({ text: `Memproses ${i + 1}/${pagesElements.length}...`, type: 'info' });
-                await new Promise(r => setTimeout(r, 50));
-                const canvas = await window.html2canvas(pagesElements[i], { scale: 2.5, useCORS: true, width: 794, windowWidth: 794, logging: false });
-                const imgData = canvas.toDataURL('image/jpeg', 0.98);
-                if (i > 0) doc.addPage();
-                doc.addImage(imgData, 'JPEG', 0, 0, 210, 296.7);
-            }
-
             if (pdfAction === 'share') {
-                setStatusMsg({ text: 'Menyiapkan File Share...', type: 'info' });
-                const pdfBlob = doc.output('blob');
+                const pdfBlob = await window.html2pdf().set(options).from(element).output('blob');
                 const file = new File([pdfBlob], `${cleanTitle}.pdf`, { type: 'application/pdf' });
+                
                 if (navigator.canShare && navigator.canShare({ files: [file] })) {
-                    await navigator.share({ files: [file], title: reportInfo.title, text: 'Berikut adalah laporan dokumentasi lapangan.' });
+                    await navigator.share({
+                        files: [file],
+                        title: reportInfo.title,
+                        text: 'Berikut adalah laporan dokumentasi lapangan.'
+                    });
                     setStatusMsg({ text: 'Berhasil dibagikan!', type: 'success' });
                 } else {
-                    doc.save(`${cleanTitle}.pdf`);
                     setStatusMsg({ text: 'Otomatis Mengunduh...', type: 'info' });
+                    await window.html2pdf().set(options).from(element).save();
                 }
             } else {
-                setStatusMsg({ text: 'Mengunduh PDF...', type: 'info' });
-                doc.save(`${cleanTitle}.pdf`); 
+                await window.html2pdf().set(options).from(element).save(); 
                 setStatusMsg({ text: 'PDF Diunduh!', type: 'success' }); 
             }
-        } catch (e) {
+        } 
+        catch (e) {
+            if (e.name !== 'AbortError') console.error(e);
             setStatusMsg({ text: e.name === 'AbortError' ? 'Batal Dibagikan' : 'Dibatalkan / Selesai', type: 'info' });
-        } finally { 
-            if (document.body.contains(clonedContainer)) document.body.removeChild(clonedContainer);
+        }
+        finally { 
             setIsPdfLoading(false); setBakedPages(null); setShouldTriggerDownload(false); 
             setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000); 
         }
@@ -1117,6 +1168,14 @@ const App = () => {
         isNewlyCreatedRef.current = true; 
         
         let loadedInfo = data.reportInfo || defaultReportInfo;
+        if (!loadedInfo.customMeta) {
+           loadedInfo = { ...loadedInfo, customMeta: [
+                 { id: 'm1', label: 'Pekerjaan', value: loadedInfo.project || '' },
+                 { id: 'm2', label: 'Instansi', value: loadedInfo.department || '' },
+                 { id: 'm3', label: 'Kontraktor', value: loadedInfo.contractor || '' },
+                 { id: 'm4', label: 'Konsultan', value: loadedInfo.consultant || '' }
+             ]};
+        }
         
         const initialHash = { reportInfo: JSON.stringify(loadedInfo), umumLength: data.pagesData?.umum?.length || 0, progresLength: data.pagesData?.progres?.length || 0 }; 
         lastSavedHashRef.current = initialHash;
@@ -1165,12 +1224,12 @@ const App = () => {
       const img = new Image(); img.src = dataUrl;
       img.onload = () => {
         const canvas = document.createElement('canvas'); 
-        const max = 500; 
+        const max = 640; 
         let w = img.width, h = img.height;
         if (w > max || h > max) { if (w > h) { h = Math.round((max / w) * h); w = max; } else { w = Math.round((max / h) * w); h = max; } }
         canvas.width = w; canvas.height = h; 
         const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, w, h);
-        r(canvas.toDataURL('image/jpeg', 0.5)); 
+        r(canvas.toDataURL('image/jpeg', 0.65)); 
       };
       img.onerror = () => r(null);
     });
@@ -1215,7 +1274,7 @@ const App = () => {
   const updateSpecificPhoto = (pIdx, sIdx, key, val) => {
     setPages(prev => {
       const n = [...prev]; if (!n[pIdx]) return prev;
-      const npo = [...n[pIdx]]; npo[sIdx] = { ...npo[sIdx], [key]: val };
+      const npo = [...n[pIdx]]; npo[sIdx] = { ...(npo[sIdx] || {}), [key]: val };
       n[pIdx] = npo; return n;
     });
   };
@@ -1223,7 +1282,7 @@ const App = () => {
   const clearSpecificPhoto = (pIdx, sIdx) => {
     setPages(prev => {
       const n = [...prev]; if (!n[pIdx]) return prev; const np = [...n[pIdx]];
-      np[sIdx] = { id: np[sIdx].id, src: null, note: np[sIdx].note, brightness: 100, saturation: 100, progress: 0, zoom: 100, panX: 50, panY: 50 };
+      np[sIdx] = { id: np[sIdx]?.id || Date.now(), src: null, note: np[sIdx]?.note || '', brightness: 100, saturation: 100, progress: 0, zoom: 100, panX: 50, panY: 50 };
       n[pIdx] = np; return n;
     });
   };
@@ -1252,7 +1311,7 @@ const App = () => {
     const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
     if (files.length === 0) return;
     const curIdx = currentPage - 1; let updatedPages = [...pages]; let newPageRef = [...updatedPages[curIdx]];
-    const emptySlots = []; newPageRef.forEach((s, i) => { if (!s.src) emptySlots.push(i); });
+    const emptySlots = []; newPageRef.forEach((s, i) => { if (!s?.src) emptySlots.push(i); });
     if (emptySlots.length === 0) { setStatusMsg({ text: 'Penuh!', type: 'error' }); setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000); return; }
     const limit = Math.min(files.length, emptySlots.length);
     setStatusMsg({ text: `Proses ${limit} foto...`, type: 'info' });
@@ -1260,7 +1319,7 @@ const App = () => {
       const objectUrl = URL.createObjectURL(files[i]);
       const cropped = await processInitialUpload(objectUrl);
       URL.revokeObjectURL(objectUrl);
-      if (cropped) newPageRef[emptySlots[i]] = { ...newPageRef[emptySlots[i]], src: cropped, brightness: 100, saturation: 100, zoom: 100, panX: 50, panY: 50 };
+      if (cropped) newPageRef[emptySlots[i]] = { ...(newPageRef[emptySlots[i]] || {}), src: cropped, brightness: 100, saturation: 100, zoom: 100, panX: 50, panY: 50 };
     }
     updatedPages[curIdx] = newPageRef; setPages(updatedPages);
     setStatusMsg({ text: 'Selesai!', type: 'success' }); setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
@@ -1374,52 +1433,6 @@ const App = () => {
 
   const activePageData = useMemo(() => pages[currentPage - 1] || [], [pages, currentPage]);
 
-  const ReportPage = ({ data, isFinal = false }) => {
-    const template = reportInfo.template || 'klasik';
-    const cMeta = reportInfo.customMeta || [];
-    const meta = [...cMeta.map(m => ({ l: m.label, v: m.value })), { l: "Tahun", v: reportInfo.date }];
-    const isModern = template === 'modern';
-    const baseFontClass = isModern ? 'font-serif text-slate-800' : 'font-sans text-black';
-    const headerTitleClass = isModern ? 'text-indigo-950 tracking-wide font-bold' : 'text-slate-900 font-black';
-    let headerBorderClass = isModern ? (reportType === 'progres' ? 'border-b-4 border-emerald-700' : 'border-b-4 border-indigo-800') : (reportType === 'progres' ? 'border-b-2 border-emerald-500' : 'border-b-2 border-slate-900');
-    const cardContainerClass = isModern ? 'border border-indigo-100 shadow-md rounded-2xl' : 'border border-slate-200 shadow-sm rounded-xl';
-    const imgContainerClass = isModern ? `rounded-xl border-2 ${reportType === 'progres' ? 'border-emerald-500' : 'border-indigo-500'}` : 'rounded-lg border border-slate-100';
-    let noteBorderClass = isModern ? (reportType === 'progres' ? 'border-emerald-600' : 'border-indigo-500') : (reportType === 'progres' ? 'border-emerald-500' : 'border-blue-500');
-    return (
-      <div className={`bg-white w-[210mm] flex flex-col ${baseFontClass} relative box-border ${isFinal ? 'report-page-final' : 'mb-10 shadow-2xl rounded-2xl border border-slate-200 shrink-0'}`} style={{ height: '296.7mm', padding: '6mm 15mm 15mm 15mm', margin: '0 auto', pageBreakAfter: 'always' }}>
-        <div className={`text-center pb-4 mb-5 flex-none ${headerBorderClass}`}>
-          <div className="flex justify-start items-center gap-4 mb-3 h-14">
-            {reportInfo.logos?.map((l, i) => l && <img key={i} src={l} className="h-full max-w-[45mm] w-auto object-contain object-left" alt="" />)}
-          </div>
-          <h2 className={`text-xl uppercase mb-4 leading-tight ${headerTitleClass}`}>{reportInfo.title}</h2>
-          <div className="text-left space-y-0.5">
-            {meta.map((m, idx) => (
-              <div key={idx} className="flex items-start uppercase text-[7pt] tracking-tight">
-                <span className="w-24 shrink-0 font-bold text-slate-400">{m.l}</span><span className="mr-2 font-bold text-slate-600">:</span><span className="font-black flex-1 break-words leading-tight text-slate-800">{m.v || '-'}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-4 flex-grow content-start">
-          {data.map((p, i) => (
-            <div key={i} className={`p-2.5 flex flex-col h-[72mm] bg-white box-border ${cardContainerClass}`}>
-              <div className={`h-[50mm] bg-slate-50 relative overflow-hidden flex items-center justify-center ${imgContainerClass}`}>
-                {p?.src ? <img src={p.src} className="w-full h-full object-cover" style={{ filter: `brightness(${p.brightness || 100}%) saturate(${p.saturation || 100}%)`, transform: `scale(${(p.zoom || 100) / 100})`, transformOrigin: `${p.panX ?? 50}% ${p.panY ?? 50}%` }} alt="" /> : <ImageIcon size={30} className="text-slate-200" />}
-              </div>
-              <div className={`mt-2.5 border-l-4 pl-3 overflow-hidden flex-1 ${noteBorderClass}`}>
-                <div className="flex items-center justify-between mb-0.5">
-                  <div className="text-[6pt] font-black text-slate-300 uppercase tracking-tighter">KETERANGAN:</div>
-                  {reportType === 'progres' && p?.src && <div className="text-[7pt] font-black text-slate-900 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200">PROGRES: {p.progress || 0}%</div>}
-                </div>
-                <p className={`text-[8.5pt] leading-tight italic line-clamp-2 ${isModern ? 'text-slate-800' : 'text-slate-700 font-medium'}`}>{p?.note || '-'}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  };
-
   if (!activeEmail) {
     return (
       <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4 relative overflow-hidden">
@@ -1438,6 +1451,11 @@ const App = () => {
               </div>
             </div>
             {loginError && <div className="bg-red-50 text-red-600 p-4 rounded-2xl text-xs font-bold border border-red-100 flex items-start gap-2"><AlertCircle size={16} className="shrink-0 mt-0.5" /><span>{loginError}</span></div>}
+            {debugError && (
+              <div className="bg-orange-50 p-3 rounded-2xl text-[10px] text-orange-700 font-mono border border-orange-200 text-center break-words">
+                <strong>Info Error Firebase:</strong> {debugError}
+              </div>
+            )}
             <button type="submit" disabled={!isAppReady} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl sm:rounded-3xl font-black uppercase tracking-widest shadow-xl shadow-blue-500/30 active:scale-95 transition-all text-sm disabled:opacity-50">
               {isAppReady ? 'Masuk' : 'Memuat...'}
             </button>
@@ -1511,117 +1529,128 @@ const App = () => {
       {view === 'dashboard' && (
         <main className="max-w-6xl mx-auto p-4 sm:p-8 animate-in fade-in duration-500">
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end mb-8 gap-6">
-            <div className="w-full lg:w-auto">
+            <div>
               <h2 className="text-2xl sm:text-3xl font-black text-slate-900 mb-2 flex items-center gap-2.5"><FolderOpen className="text-blue-600 w-8 h-8" /> Arsip Laporan</h2>
-              <div className="flex items-center gap-2">
-                 <p className="text-slate-500 font-medium text-xs sm:text-sm">Masuk sebagai: <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-md font-bold">{activeEmail}</span>{isAdmin && <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded-md font-bold text-[9px] shadow-sm">👑 Admin</span>}</p>
-              </div>
-
-              {/* FITUR BARU: FILTER USER PILLS (TAMPILAN PREMIUM) */}
+              <p className="text-slate-500 font-medium text-xs sm:text-sm">Masuk sebagai: <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-md font-bold">{activeEmail}</span>{isAdmin && <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded-md font-bold text-[9px] ml-2 shadow-sm">👑 Admin</span>}</p>
               {isAdmin && projects.length > 0 && (
-                <div className="mt-6 flex flex-col gap-2 animate-in fade-in slide-in-from-left-4">
-                  <div className="flex items-center gap-1.5 text-[10px] font-black text-slate-400 uppercase tracking-widest"><Filter size={14} className="text-blue-500" /> FILTER PENGGUNA:</div>
-                  <div className="flex flex-wrap gap-2">
-                     <button onClick={() => setFilterEmail('all')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all border shadow-sm ${filterEmail === 'all' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50 hover:text-slate-700'}`}>Semua ({projects.length})</button>
-                     {uniqueAuthors.map(email => {
-                       const theme = getUserColorTheme(email);
-                       const isActive = filterEmail === email;
-                       const userProjectCount = projects.filter(p => p.authorEmail === email).length;
-                       return (
-                         <button key={email} onClick={() => setFilterEmail(email)} className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase transition-all border shadow-sm ${isActive ? `${theme.bg} ${theme.text} ${theme.border} ring-2 ring-offset-2 ring-${theme.border.split('-')[1]}-400` : `bg-white text-slate-500 border-slate-200 hover:bg-slate-50 hover:text-slate-700`}`}>
-                           <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] text-white shadow-sm ${theme.solid}`}>{theme.initial}</span>
-                           <span className="max-w-[120px] truncate">{email.split('@')[0]}</span>
-                           <span className={`ml-1 px-1.5 py-0.5 rounded text-[9px] ${isActive ? 'bg-white/50' : 'bg-slate-100 text-slate-400'}`}>{userProjectCount}</span>
-                         </button>
-                       );
-                     })}
-                  </div>
+                <div className="mt-4 flex flex-wrap items-center gap-2 animate-in fade-in slide-in-from-left-4">
+                  <div className="flex items-center gap-1.5 text-[10px] font-black text-slate-400 uppercase tracking-widest"><Filter size={14} className="text-blue-500" /> FILTER USER:</div>
+                  <select value={filterEmail} onChange={e => setFilterEmail(e.target.value)} className="bg-white border-2 border-slate-200 text-slate-700 font-bold text-[10px] rounded-xl px-3 py-2 outline-none shadow-sm cursor-pointer transition-all">
+                    <option value="all">Tampilkan Semua</option>
+                    {uniqueAuthors.map(email => (<option key={email} value={email}>{email === activeEmail ? `${email} (Saya)` : email}</option>))}
+                  </select>
                 </div>
               )}
             </div>
-            <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto mt-4 lg:mt-0 shrink-0">
+            <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
               {isAdmin && <button onClick={() => setShowAccessModal(true)} className="w-full sm:w-auto bg-slate-800 text-white px-4 sm:px-6 py-3.5 rounded-2xl font-black uppercase text-[10px] sm:text-xs flex items-center justify-center gap-2 shadow-lg transition-all active:scale-95"><User size={16}/> AKSES</button>}
               <label className="w-full sm:w-auto bg-white text-blue-600 border-2 border-blue-600 px-4 sm:px-6 py-3.5 rounded-2xl font-black uppercase text-[10px] sm:text-xs flex items-center justify-center gap-2 shadow-lg cursor-pointer transition-all active:scale-95"><UploadCloud size={16}/> BUKA MENTAHAN<input type="file" accept=".json" onChange={loadMentahan} className="hidden" /></label>
               <button onClick={createNewProject} className="w-full sm:w-auto bg-blue-600 text-white px-4 sm:px-8 py-3.5 rounded-2xl font-black uppercase text-[10px] sm:text-xs flex items-center justify-center gap-2 shadow-xl shadow-blue-500/30 transition-all active:scale-95"><Plus size={16}/> BUAT LAPORAN</button>
             </div>
           </div>
 
-          {isAdmin && (
-            <div className="mb-10 space-y-6 animate-in fade-in slide-in-from-bottom-4">
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 flex items-center gap-4">
-                   <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0"><FileStack size={24}/></div>
-                   <div><p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Total Laporan</p><h3 className="text-xl font-black text-slate-800">{filteredProjects.length}</h3></div>
-                </div>
-                <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 flex items-center gap-4">
-                   <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0"><Layers size={24}/></div>
-                   <div><p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Total Halaman</p><h3 className="text-xl font-black text-slate-800">{dashboardStats.totalPages}</h3></div>
-                </div>
-                <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 flex items-center gap-4">
-                   <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0"><Users size={24}/></div>
-                   <div><p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Kontributor</p><h3 className="text-xl font-black text-slate-800">{uniqueAuthors.length}</h3></div>
-                </div>
-                <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 flex items-center gap-4">
-                   <div className="w-12 h-12 rounded-2xl bg-orange-50 text-orange-600 flex items-center justify-center shrink-0"><Activity size={24}/></div>
-                   <div className="overflow-hidden w-full"><p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5 truncate">Aktivitas Terbaru</p>
-                     <h3 className="text-[11px] font-bold text-slate-800 leading-tight">
-                       {filteredProjects.length > 0 && filteredProjects[0] ? new Date(filteredProjects[0].updatedAt || Date.now()).toLocaleString('id-ID', {day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'}) : '-'}
-                     </h3>
-                     {filteredProjects.length > 0 && filteredProjects[0]?.authorEmail && (<p className="text-[9px] text-slate-500 font-medium truncate mt-0.5">Oleh: <span className="text-blue-600">{filteredProjects[0].authorEmail.split('@')[0]}</span></p>)}
-                   </div>
-                </div>
-              </div>
+          {isOfflineMode ? (
+            <div className="bg-orange-50 rounded-[32px] border-2 border-dashed border-orange-200 p-8 flex flex-col items-center justify-center text-center mt-8">
+              <WifiOff size={40} className="text-orange-400 mb-4" /><h3 className="text-lg font-black text-orange-700 mb-2">Mode Lokal (Offline)</h3>
+              <p className="text-orange-600 max-w-lg text-xs sm:text-sm">Batas kuota database harian penuh. Anda tetap bisa bekerja dan menyimpan hasil via <strong>MENTAHAN (.json)</strong>.</p>
             </div>
-          )}
-
-          {filteredProjects.length === 0 ? (
-            <div className="bg-white rounded-[32px] border-2 border-dashed border-slate-300 p-10 flex flex-col items-center justify-center text-center mt-10">
-              <ClipboardList size={48} className="text-slate-300 mb-4" />
-              <h3 className="text-lg font-black text-slate-600 mb-2">Belum Ada Laporan</h3>
-              <p className="text-slate-400 text-xs sm:text-sm">{filterEmail !== 'all' ? 'Pengguna ini belum memiliki laporan.' : 'Klik buat laporan baru untuk memulai.'}</p>
+          ) : !user ? (
+            <div className="bg-slate-100 rounded-[32px] border-2 border-dashed border-slate-300 p-10 flex flex-col items-center justify-center text-center mt-8">
+              <Loader2 size={40} className="text-blue-400 mb-4 animate-spin" /><h3 className="text-lg font-black text-slate-600 mb-2">Menyambungkan ke Cloud...</h3>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6 mt-6">
-              {filteredProjects.map(p => {
-                const uTheme = getUserColorTheme(p.authorEmail);
-                return (
-                  <div key={p.id} onClick={() => openProject(p)} className="bg-white rounded-[24px] p-5 shadow-sm hover:shadow-xl border border-slate-200 hover:border-blue-400 transition-all flex flex-col hover:-translate-y-1 cursor-pointer group">
-                    <div className="flex justify-between items-start mb-4">
-                       <div className={`flex items-center gap-2 px-2.5 py-1.5 rounded-xl border ${uTheme.bg} ${uTheme.text} ${uTheme.border}`}>
-                          <div className={`w-5 h-5 rounded-full flex items-center justify-center font-black text-[10px] text-white shadow-sm ${uTheme.solid}`}>
-                            {uTheme.initial}
-                          </div>
-                          <span className="text-[9px] font-black uppercase tracking-wider max-w-[120px] truncate" title={p.authorEmail}>
-                            {(p.authorEmail || 'Anonim').split('@')[0]}
-                          </span>
+            <>
+              {isAdmin && (
+                <div className="mb-10 space-y-6 animate-in fade-in slide-in-from-bottom-4">
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 flex items-center gap-4 sm:gap-5">
+                       <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0"><FileStack size={24} className="sm:w-[28px] sm:h-[28px]"/></div>
+                       <div className="overflow-hidden">
+                         <p className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1 truncate">Total Laporan</p>
+                         <h3 className="text-xl sm:text-3xl font-black text-slate-800">{filteredProjects.length}</h3>
                        </div>
-                       <button onClick={(e) => { e.stopPropagation(); setShowDeleteProjectModal({show: true, project: p}); }} className="p-1.5 bg-white border border-slate-100 text-slate-400 hover:text-white hover:bg-red-500 hover:border-red-500 rounded-lg transition-all shadow-sm"><Trash2 size={14}/></button>
                     </div>
                     
-                    <h3 className="text-sm font-black text-slate-800 mb-4 line-clamp-2 leading-snug group-hover:text-blue-600 transition-colors">{p.reportInfo?.title || 'Laporan Tanpa Judul'}</h3>
+                    <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 flex items-center gap-4 sm:gap-5">
+                       <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0"><Layers size={24} className="sm:w-[28px] sm:h-[28px]"/></div>
+                       <div className="overflow-hidden">
+                         <p className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1 truncate">Total Halaman</p>
+                         <h3 className="text-xl sm:text-3xl font-black text-slate-800">{dashboardStats.totalPages}</h3>
+                       </div>
+                    </div>
+
+                    <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 flex items-center gap-4 sm:gap-5">
+                       <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0"><Users size={24} className="sm:w-[28px] sm:h-[28px]"/></div>
+                       <div className="overflow-hidden">
+                         <p className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1 truncate">Kontributor</p>
+                         <h3 className="text-xl sm:text-3xl font-black text-slate-800">{uniqueAuthors.length}</h3>
+                       </div>
+                    </div>
                     
-                    <div className="space-y-2.5 mb-5 flex-grow text-[10px] text-slate-500 font-medium">
-                      {p.reportInfo?.customMeta?.[0]?.value && (
-                         <div className="flex items-center gap-2 truncate bg-slate-50 px-2.5 py-2 rounded-lg border border-slate-100">
-                           <Briefcase size={12} className="text-slate-400 shrink-0" /> 
-                           <span className="truncate">{p.reportInfo.customMeta[0].value}</span>
-                         </div>
-                      )}
-                      <div className="flex items-center justify-between px-1 pt-1 mt-1 border-t border-slate-50">
-                         <div className="flex items-center gap-1.5" title="Waktu Update Terakhir">
-                           <Calendar size={12} className="text-blue-400 shrink-0"/> 
-                           <span className="text-[9px] tracking-tight">{new Date(p.updatedAt || Date.now()).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-                         </div>
-                         <div className="flex items-center gap-1.5" title="Jumlah Halaman">
-                           <FileText size={12} className={p.lastActiveTab === 'progres' ? 'text-emerald-400 shrink-0' : 'text-blue-400 shrink-0'}/> 
-                           <span>{p.lastActiveTab === 'progres' ? (p.pageCountProgres || 1) : (p.pageCountUmum || 1)} Hal</span>
-                         </div>
-                      </div>
+                    <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 flex items-center gap-4 sm:gap-5">
+                       <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-orange-50 text-orange-600 flex items-center justify-center shrink-0"><Activity size={24} className="sm:w-[28px] sm:h-[28px]"/></div>
+                       <div className="overflow-hidden w-full">
+                         <p className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1 truncate">Aktivitas Terbaru</p>
+                         <h3 className="text-sm sm:text-base font-bold text-slate-800 leading-tight">
+                           {filteredProjects.length > 0 && filteredProjects[0] ? new Date(filteredProjects[0].updatedAt).toLocaleString('id-ID', {day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'}) : '-'}
+                         </h3>
+                         {filteredProjects.length > 0 && filteredProjects[0]?.authorEmail && (
+                             <p className="text-[9px] sm:text-[10px] text-slate-500 font-medium truncate mt-1">Oleh: <span className="text-blue-600">{filteredProjects[0].authorEmail}</span></p>
+                         )}
+                       </div>
                     </div>
                   </div>
-                );
-              })}
-            </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between mb-4 border-t border-slate-200 pt-8">
+                <h3 className="text-xl font-black text-slate-800 flex items-center gap-2"><ClipboardList className="text-blue-500"/> Daftar Laporan Tersimpan</h3>
+              </div>
+
+              {filteredProjects.length === 0 ? (
+                <div className="bg-white rounded-[32px] border-2 border-dashed border-slate-300 p-10 flex flex-col items-center justify-center text-center">
+                  <ClipboardList size={48} className="text-slate-300 mb-4" />
+                  <h3 className="text-lg font-black text-slate-600 mb-2">Belum Ada Laporan</h3>
+                  <p className="text-slate-400 text-xs sm:text-sm">
+                    {filterEmail !== 'all' ? 'User ini belum memiliki laporan.' : 'Klik buat laporan baru untuk memulai.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                  {filteredProjects.map(p => 
+                    isAdmin ? (
+                      <div key={p.id} className="bg-white rounded-[24px] p-5 shadow-xl border border-slate-200 hover:border-blue-400 transition-all flex flex-col hover:-translate-y-1">
+                        <div className="flex justify-between items-start mb-3">
+                           <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase bg-blue-100 text-blue-700">DOKUMENTASI</span>
+                           <button onClick={(e) => { e.stopPropagation(); setShowDeleteProjectModal({show: true, project: p}); }} className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg transition-all"><Trash2 size={16}/></button>
+                        </div>
+                        <h3 className="text-base font-black text-slate-800 mb-3 line-clamp-2">{p.reportInfo?.title || 'Laporan'}</h3>
+                        <div className="space-y-1.5 mb-4 flex-grow text-[10px] text-slate-500 font-medium">
+                          <div className="flex items-center gap-2 truncate"><Briefcase size={12} /> {p.reportInfo?.customMeta?.[0]?.value || p.reportInfo?.project || '-'}</div>
+                          <div className="flex items-center gap-2 truncate"><User size={12} /> Oleh: <strong className="text-slate-600">{p.authorEmail || 'Anonim'}</strong></div>
+                          <div className="flex items-center gap-2"><Calendar size={12} /> {new Date(p.updatedAt || Date.now()).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
+                          <div className="flex items-center gap-2"><FileText size={12} /> {p.lastActiveTab === 'progres' ? (p.pageCountProgres || 1) : (p.pageCountUmum || p.pageCount || 1)} Halaman</div>
+                        </div>
+                        <button onClick={() => openProject(p)} className="w-full bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 py-2.5 rounded-xl font-black text-[10px] uppercase transition-all flex justify-center items-center gap-2">Buka Laporan <ChevronRight size={14} /></button>
+                      </div>
+                    ) : (
+                      <div key={p.id} className="bg-white rounded-[20px] p-5 border border-slate-200 hover:bg-slate-50 transition-all flex flex-col shadow-sm">
+                        <div className="flex justify-between items-start mb-3">
+                           <div className="flex items-center gap-2 text-slate-500"><FileText size={16}/><span className="text-[10px] font-bold uppercase tracking-widest">DOKUMEN</span></div>
+                           <button onClick={(e) => { e.stopPropagation(); setShowDeleteProjectModal({show: true, project: p}); }} className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg transition-all"><Trash2 size={16}/></button>
+                        </div>
+                        <h3 className="text-sm font-bold text-slate-800 mb-4 line-clamp-2 leading-relaxed">{p.reportInfo?.title || 'Laporan'}</h3>
+                        <div className="space-y-2 mb-5 flex-grow text-[11px] text-slate-500 font-medium">
+                          <div className="flex items-center gap-2.5 truncate"><Briefcase size={14} className="text-slate-400" /> {p.reportInfo?.customMeta?.[0]?.value || p.reportInfo?.project || '-'}</div>
+                          <div className="flex items-center gap-2.5"><Layers size={14} className="text-slate-400" /> {p.lastActiveTab === 'progres' ? (p.pageCountProgres || 1) : (p.pageCountUmum || p.pageCount || 1)} Halaman</div>
+                        </div>
+                        <button onClick={() => openProject(p)} className="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 py-2.5 rounded-xl font-bold text-[10px] uppercase transition-all flex justify-center items-center gap-2">Buka Laporan <ChevronRight size={14} /></button>
+                      </div>
+                    )
+                  )}
+                </div>
+              )}
+            </>
           )}
         </main>
       )}
@@ -1660,6 +1689,7 @@ const App = () => {
                 <label className="text-[9px] font-black text-slate-400 ml-2">Judul Laporan</label>
                 <input type="text" value={reportInfo.title} onChange={e => setReportInfo({...reportInfo, title: e.target.value})} className="w-full p-3.5 bg-slate-50 border-2 border-transparent rounded-2xl font-black text-slate-800 focus:border-blue-500 outline-none transition-all shadow-inner text-sm" />
               </div>
+              
               {(reportInfo.customMeta || []).map((meta, idx) => (
                 <div key={meta.id} className={`${idx === 0 ? 'md:col-span-2' : ''} group relative`}>
                   <div className="flex items-center justify-between mb-1 ml-2 pr-2">
@@ -1675,13 +1705,16 @@ const App = () => {
                     }} className="w-full p-3.5 bg-slate-50 border-2 border-transparent rounded-2xl font-black text-slate-800 focus:border-blue-500 outline-none shadow-inner text-sm" />
                 </div>
               ))}
+
               <div className="md:col-span-2 mt-1 mb-2">
                 <button onClick={() => setReportInfo({...reportInfo, customMeta: [...(reportInfo.customMeta || []), { id: `m${Date.now()}`, label: 'KOLOM BARU', value: '' }]})} className="bg-blue-50 text-blue-600 text-[9px] font-black uppercase py-2 px-4 rounded-xl transition-all flex items-center gap-1.5"><Plus size={14}/> Tambah Info</button>
               </div>
+
               <div className="md:col-span-2">
                 <label className="text-[9px] font-black text-slate-400 ml-2 block mb-1">Tahun (Tetap)</label>
                 <input type="text" value={reportInfo.date} onChange={e => setReportInfo({...reportInfo, date: e.target.value})} className="w-full p-3.5 bg-slate-50 border-2 border-transparent rounded-2xl font-black text-slate-800 outline-none shadow-inner text-sm" />
               </div>
+
               <div className="md:col-span-2 mt-4 pt-4 border-t border-slate-100">
                 <label className="text-[9px] font-black text-blue-500 ml-2 flex items-center gap-1.5 mb-2"><Palette size={14} /> TEMA TAMPILAN PDF</label>
                 <div className="flex gap-2 bg-slate-50 p-2 rounded-2xl shadow-inner border border-slate-200 overflow-x-auto">
@@ -1725,22 +1758,22 @@ const App = () => {
             <button onClick={() => setPreviewZoom(window.innerWidth < 850 ? (window.innerWidth - 20) / 794 : 1)} className="p-1 text-[10px] font-black flex items-center gap-1.5"><Maximize size={14}/> FIT</button>
           </div>
           <div className="flex flex-col items-center gap-10 py-4 transition-transform duration-300 origin-top" style={{ transform: `scale(${previewZoom})`, width: '210mm', marginBottom: `${(previewZoom - 1) * pages.length * 1122}px` }}>
-            {pages.map((p, i) => <ReportPage key={`preview-${i}`} data={p} />)}
+            {pages.map((p, i) => <ReportPage key={`preview-${i}`} data={p} reportInfo={reportInfo} reportType={reportType} />)}
           </div>
         </main>
       )}
 
       <div style={{ height: 0, overflow: 'hidden', position: 'absolute', top: 0, left: 0, pointerEvents: 'none', zIndex: -1 }}>
          <div id="pdf-render-area" style={{ width: '210mm', backgroundColor: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-           {(bakedPages || pages).map((p, i) => <ReportPage key={`render-${i}`} data={p} isFinal={true} />)}
+           {(bakedPages || pages).map((p, i) => <ReportPage key={`render-${i}`} data={p} isFinal={true} reportInfo={reportInfo} reportType={reportType} />)}
          </div>
       </div>
 
       {showReminderModal && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
           <div className="bg-white rounded-[24px] p-6 sm:p-8 max-w-md w-full shadow-2xl animate-in zoom-in-95 border-2 border-orange-100">
-            <div className="flex items-center gap-3 text-orange-500 mb-4"><div className="bg-orange-100 p-2 rounded-full"><HardDrive size={24} /></div><h3 className="text-lg font-black uppercase tracking-widest">Backup</h3></div>
-            <p className="text-slate-600 font-medium mb-6 text-xs leading-relaxed">Disarankan mengunduh <strong>File Mentahan (.json)</strong> sebelum {pendingAction === 'logout' ? 'keluar' : 'kembali'}.</p>
+            <div className="flex items-center gap-3 text-orange-500 mb-4"><div className="bg-orange-100 p-2 rounded-full"><HardDrive size={24} /></div><h3 className="text-lg font-black uppercase tracking-widest">Pengingat Backup</h3></div>
+            <p className="text-slate-600 font-medium mb-6 text-xs sm:text-sm leading-relaxed">Disarankan mengunduh <strong>File Mentahan (.json)</strong> sebelum {pendingAction === 'logout' ? 'keluar' : 'kembali'}. File ini bisa dibuka kapan pun.</p>
             <div className="flex flex-col gap-2.5">
               <button onClick={saveMentahanAndProceed} className="w-full py-3.5 font-black bg-blue-600 text-white rounded-xl uppercase text-[10px] shadow-lg flex justify-center items-center gap-2"><HardDrive size={16} /> Simpan Mentahan & Lanjut</button>
               <div className="flex gap-2.5">
@@ -1756,10 +1789,10 @@ const App = () => {
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
           <div className="bg-white rounded-[24px] p-6 max-w-sm w-full shadow-2xl animate-in zoom-in-95">
             <div className="flex items-center gap-3 text-red-600 mb-4"><ShieldAlert size={28}/><h3 className="text-lg font-black uppercase tracking-widest">Hapus Proyek</h3></div>
-            <p className="text-slate-600 mb-6 text-xs">Hapus laporan dari Cloud?</p>
+            <p className="text-slate-600 mb-6 text-xs sm:text-sm">Hapus laporan dari Cloud?</p>
             <div className="flex gap-3">
               <button onClick={() => setShowDeleteProjectModal({show: false, project: null})} className="flex-1 py-3 font-black bg-slate-100 rounded-xl uppercase text-[10px] text-slate-500">Batal</button>
-              <button onClick={executeDeleteProject} className="flex-1 py-3 font-black bg-red-600 text-white rounded-xl uppercase text-[10px]">Hapus</button>
+              <button onClick={executeDeleteProject} className="flex-1 py-3 font-black bg-red-600 text-white rounded-xl uppercase text-[10px]">Hapus Total</button>
             </div>
           </div>
         </div>
@@ -1769,7 +1802,7 @@ const App = () => {
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
           <div className="bg-white rounded-[24px] p-6 max-w-sm w-full shadow-2xl animate-in zoom-in-95">
             <div className="flex items-center gap-3 text-red-600 mb-4"><Trash2 size={28}/><h3 className="text-lg font-black uppercase tracking-widest">Hapus Halaman</h3></div>
-            <p className="text-slate-600 mb-6 text-xs">Hapus <strong>Halaman {currentPage}</strong>?</p>
+            <p className="text-slate-600 mb-6 text-xs sm:text-sm">Hapus <strong>Halaman {currentPage}</strong>?</p>
             <div className="flex gap-3">
               <button onClick={() => setShowDeletePageModal(false)} className="flex-1 py-3 font-black bg-slate-100 rounded-xl uppercase text-[10px] text-slate-500">Batal</button>
               <button onClick={executeDeletePage} className="flex-1 py-3 font-black bg-red-600 text-white rounded-xl uppercase text-[10px]">Hapus</button>
@@ -1811,6 +1844,7 @@ const App = () => {
       <style dangerouslySetInnerHTML={{ __html: `
         @media print { @page { size: A4 portrait; margin: 0 !important; } .report-page-final { page-break-after: always !important; border: none !important; box-shadow: none !important; margin: 0 !important; width: 210mm !important; } }
         .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
         input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 18px; width: 18px; border-radius: 50%; background: currentColor; cursor: pointer; border: 3px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
