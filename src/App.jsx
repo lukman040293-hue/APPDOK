@@ -249,6 +249,7 @@ const App = () => {
   const isNewlyCreatedRef = useRef(false); // PENANDA PROYEK BARU UNTUK MENCEGAH TENDANGAN LIVE SYNC
   const isSavingRef = useRef(false); // ANTI TABRAKAN AUTOSAVE (LOCK)
   const queuedSaveDataRef = useRef(null); // --- TAMBAHAN: ANTRIAN SAVE ---
+  const projectCacheRef = useRef({}); // --- ANTI-REVERT CACHE ---
   
   const [showClearModal, setShowClearModal] = useState(false);
   const [showDeleteProjectModal, setShowDeleteProjectModal] = useState({ show: false, project: null });
@@ -655,6 +656,11 @@ const App = () => {
     if (!user || !id) return Promise.resolve(false);
     if (isOfflineMode || !db) return Promise.resolve(false);
     
+    // --- SIMPAN KE CACHE LOKAL UNTUK ANTI-REVERT ---
+    // Menyimpan data terbaru ke memori. Jika user Buka Laporan sebelum Firebase selesai,
+    // aplikasi akan mengambil data dari memori ini!
+    projectCacheRef.current[id] = { info, pagesObj, type, timeToSave };
+
     if (isSavingRef.current) {
         // --- PERBAIKAN BUG: JANGAN BUANG PERUBAHAN! ---
         // Jika sedang upload tapi user ngetik/minta save, kita masukkan ke antrean!
@@ -767,6 +773,7 @@ const App = () => {
       // Jika tadi ada yang antre minta di-save (karena user ngetik saat loading/upload), eksekusi sekarang!
       if (queuedSaveDataRef.current) {
           const q = queuedSaveDataRef.current;
+          queuedSaveDataRef.current = null; // Bersihkan agar tidak looping
           // Jalan di background secara otomatis!
           saveToCloudNow(q.id, q.info, q.pagesObj, q.type, q.emailToSave, q.timeToSave);
       }
@@ -833,6 +840,36 @@ const App = () => {
       const freshProjectData = projSnap.exists() ? projSnap.data() : project;
       const pAuthor = freshProjectData.authorEmail || project.authorEmail || activeEmail;
       const pTime = freshProjectData.updatedAt || project.updatedAt || Date.now();
+
+      // --- ANTI-REVERT: CEK CACHE LOKAL (OPTIMISTIC UI) ---
+      // Jika ada data antrean yang lebih baru di memori, pakai itu! Jangan tunggu Firebase
+      const cache = projectCacheRef.current[project.id];
+      if (cache && cache.timeToSave >= pTime) {
+          setProjectAuthor(pAuthor);
+          setProjectTime(cache.timeToSave);
+          isInitialLoad.current = true;
+
+          setReportInfo(cache.info);
+          setReportType(cache.type);
+          setPagesData(cache.pagesObj);
+
+          const initialHash = {};
+          cache.pagesObj.umum.forEach((pData, idx) => { initialHash[`${project.id}_umum_${idx}`] = createPageHash(pData); });
+          cache.pagesObj.progres.forEach((pData, idx) => { initialHash[`${project.id}_progres_${idx}`] = createPageHash(pData); });
+
+          lastSavedHashRef.current = initialHash;
+          lastSavedHashRef.current.reportInfo = JSON.stringify(cache.info);
+          lastSavedHashRef.current.umumLength = cache.pagesObj.umum.length;
+          lastSavedHashRef.current.progresLength = cache.pagesObj.progres.length;
+
+          setView(sessionData?.view || 'edit');
+          setCurrentPage(sessionData?.currentPage || 1);
+          setSaveStatus('saved');
+          setStatusMsg({ text: '', type: '' });
+          return; // LANGSUNG SELESAI!
+      }
+      // --------------------------------------------------
+
       setProjectAuthor(pAuthor);
       setProjectTime(pTime);
       isInitialLoad.current = true;
@@ -978,6 +1015,8 @@ const App = () => {
       
       if (success) {
           setStatusMsg({ text: 'Tersimpan!', type: 'success' });
+      } else if (queuedSaveDataRef.current) {
+          setStatusMsg({ text: 'Antrean Tersimpan!', type: 'success' });
       }
       setTimeout(() => setStatusMsg({ text: '', type: '' }), 2500);
     }
