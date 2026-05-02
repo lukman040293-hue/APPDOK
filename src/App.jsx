@@ -663,12 +663,27 @@ const App = () => {
       isSavingRef.current = true;
       setSaveStatus('saving');
       
-      const batch = writeBatch(db);
+      // --- PERBAIKAN: Sistem Cicil (Chunk) agar tidak meledakkan batas 10MB Firebase ---
+      let currentBatch = writeBatch(db);
       let opsCount = 0;
+      const batchPromises = [];
+
+      const addToBatch = (ref, data, isDelete) => {
+          if (isDelete) currentBatch.delete(ref);
+          else currentBatch.set(ref, data);
+          opsCount++;
+
+          // Jika sudah 10 operasi/halaman, kita kirim sekarang dan buat keranjang baru!
+          if (opsCount >= 10) {
+              batchPromises.push(currentBatch.commit());
+              currentBatch = writeBatch(db);
+              opsCount = 0;
+          }
+      };
       
       // 1. Simpan Informasi Proyek Utama
       const projRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_projects', id);
-      batch.set(projRef, { 
+      addToBatch(projRef, { 
         reportInfo: info, 
         lastActiveTab: type, 
         pageCountUmum: pagesObj.umum.length, 
@@ -676,26 +691,23 @@ const App = () => {
         updatedAt: timeToSave || Date.now(), 
         authorEmail: emailToSave,
         lastSavedBy: TAB_SESSION_ID // Tandai bahwa layar ini yang terakhir menyimpan
-      });
-      opsCount++;
+      }, false);
 
       const isPageBlank = (pageData) => !pageData || pageData.every(p => !p.src && (!p.note || p.note.trim() === ''));
 
-      // Fungsi Helper untuk memproses halaman tanpa menguras kuota
+      // Fungsi Helper untuk memproses halaman
       const processPagesToBatch = (pages, typeStr, oldLength) => {
           for (let i = 0; i < pages.length; i++) {
-              // MENGGUNAKAN SMART HASH - CPU Tidak Akan Kelebihan Beban!
               const currentHash = createPageHash(pages[i]);
               
               if (lastSavedHashRef.current[`${id}_${typeStr}_${i}`] !== currentHash) {
                   const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_${typeStr}_page_${i}`);
                   if (isPageBlank(pages[i])) {
-                      batch.delete(pageRef);
+                      addToBatch(pageRef, null, true);
                   } else {
-                      batch.set(pageRef, { index: i, projectId: id, type: typeStr, data: pages[i] });
+                      addToBatch(pageRef, { index: i, projectId: id, type: typeStr, data: pages[i] }, false);
                   }
                   lastSavedHashRef.current[`${id}_${typeStr}_${i}`] = currentHash;
-                  opsCount++;
               }
           }
           
@@ -703,9 +715,8 @@ const App = () => {
           for (let i = pages.length; i < oldLength; i++) {
               if (lastSavedHashRef.current[`${id}_${typeStr}_${i}`] !== undefined) {
                   const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_${typeStr}_page_${i}`);
-                  batch.delete(pageRef);
+                  addToBatch(pageRef, null, true);
                   delete lastSavedHashRef.current[`${id}_${typeStr}_${i}`];
-                  opsCount++;
               }
           }
       };
@@ -717,10 +728,13 @@ const App = () => {
       processPagesToBatch(pagesObj.umum, 'umum', oldUmumLength);
       processPagesToBatch(pagesObj.progres, 'progres', oldProgresLength);
       
-      // 3. Kirim semuanya dalam 1 jaringan (Atomic Write)
+      // 3. Kirim sisa antrean terakhir
       if (opsCount > 0) {
-          await batch.commit();
+          batchPromises.push(currentBatch.commit());
       }
+
+      // Tunggu semua cicilan terkirim dengan aman
+      await Promise.all(batchPromises);
 
       // Mutakhirkan meta hash setelah semua berhasil
       lastSavedHashRef.current.reportInfo = JSON.stringify(info);
@@ -1091,8 +1105,9 @@ const App = () => {
             setStatusMsg({ text: 'Selesai!', type: 'success' });
         }
         setTimeout(() => setStatusMsg({ text: '', type: '' }), 2500);
-      } catch { 
-        setStatusMsg({ text: 'File rusak', type: 'error' }); 
+      } catch (err) { 
+        console.error("Kesalahan muat:", err);
+        setStatusMsg({ text: 'Gagal / File Rusak', type: 'error' }); 
         setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000); 
       }
     };
