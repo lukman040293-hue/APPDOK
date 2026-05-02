@@ -248,6 +248,7 @@ const App = () => {
   const [isOfflineMode, setIsOfflineMode] = useState(false); 
   const isNewlyCreatedRef = useRef(false); // PENANDA PROYEK BARU UNTUK MENCEGAH TENDANGAN LIVE SYNC
   const isSavingRef = useRef(false); // ANTI TABRAKAN AUTOSAVE (LOCK)
+  const queuedSaveDataRef = useRef(null); // --- TAMBAHAN: ANTRIAN SAVE ---
   
   const [showClearModal, setShowClearModal] = useState(false);
   const [showDeleteProjectModal, setShowDeleteProjectModal] = useState({ show: false, project: null });
@@ -653,7 +654,13 @@ const App = () => {
   const saveToCloudNow = async (id, info, pagesObj, type, emailToSave, timeToSave) => {
     if (!user || !id) return Promise.resolve(false);
     if (isOfflineMode || !db) return Promise.resolve(false);
-    if (isSavingRef.current) return Promise.resolve(false); // CEGAH TABRAKAN PENGIRIMAN
+    
+    if (isSavingRef.current) {
+        // --- PERBAIKAN BUG: JANGAN BUANG PERUBAHAN! ---
+        // Jika sedang upload tapi user ngetik/minta save, kita masukkan ke antrean!
+        queuedSaveDataRef.current = { id, info, pagesObj, type, emailToSave, timeToSave };
+        return Promise.resolve(false); 
+    }
     
     if (isProjectEmpty(info, pagesObj)) {
         return Promise.resolve(false); 
@@ -661,6 +668,7 @@ const App = () => {
     
     try {
       isSavingRef.current = true;
+      queuedSaveDataRef.current = null; // Kosongkan antrean karena sedang diproses
       setSaveStatus('saving');
       
       // --- PERBAIKAN: Sistem Cicil Berurutan (Sequential Chunking) ---
@@ -754,6 +762,14 @@ const App = () => {
       return false;
     } finally {
       isSavingRef.current = false; // Buka kembali kunci gembok antrean
+      
+      // --- PERBAIKAN BUG: CEK ANTREAN ---
+      // Jika tadi ada yang antre minta di-save (karena user ngetik saat loading/upload), eksekusi sekarang!
+      if (queuedSaveDataRef.current) {
+          const q = queuedSaveDataRef.current;
+          // Jalan di background secara otomatis!
+          saveToCloudNow(q.id, q.info, q.pagesObj, q.type, q.emailToSave, q.timeToSave);
+      }
     }
   };
 
