@@ -38,10 +38,19 @@ const getUserColorTheme = (email) => {
     { bg: 'bg-purple-100', text: 'text-purple-700', border: 'border-purple-200', solid: 'bg-purple-500' },
     { bg: 'bg-pink-100', text: 'text-pink-700', border: 'border-pink-200', solid: 'bg-pink-500' },
     { bg: 'bg-cyan-100', text: 'text-cyan-700', border: 'border-cyan-200', solid: 'bg-cyan-500' },
+    { bg: 'bg-teal-100', text: 'text-teal-700', border: 'border-teal-200', solid: 'bg-teal-500' },
+    { bg: 'bg-rose-100', text: 'text-rose-700', border: 'border-rose-200', solid: 'bg-rose-500' },
+    { bg: 'bg-violet-100', text: 'text-violet-700', border: 'border-violet-200', solid: 'bg-violet-500' },
+    { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200', solid: 'bg-amber-500' },
+    { bg: 'bg-fuchsia-100', text: 'text-fuchsia-700', border: 'border-fuchsia-200', solid: 'bg-fuchsia-500' },
+    { bg: 'bg-sky-100', text: 'text-sky-700', border: 'border-sky-200', solid: 'bg-sky-500' },
   ];
   let hash = 0;
-  for (let i = 0; i < email.length; i++) hash = email.charCodeAt(i) + ((hash << 5) - hash);
-  const theme = colors[Math.abs(hash) % colors.length];
+  for (let i = 0; i < email.length; i++) {
+    // Algoritma perkalian yang jauh lebih sensitif terhadap perubahan 1 huruf/angka
+    hash += email.charCodeAt(i) * (i + 1) * 11;
+  }
+  const theme = colors[hash % colors.length];
   return { ...theme, initial: email.charAt(0).toUpperCase() };
 };
 
