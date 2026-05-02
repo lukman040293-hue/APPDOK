@@ -1307,7 +1307,7 @@ const App = () => {
         if (reportInfo.logos?.some(l => l !== null)) {
           const lh = 0.55;
           let currentX = PAGE_MARGIN_SIDE;
-          for (let i = 0; i < 3; i++) { if (reportInfo.logos[i]) { slide.addImage({ data: reportInfo.logos[i], x: currentX, y: curY, w: 1.8, h: lh, sizing: { type: 'contain' } }); currentX += 1.9; } }
+          for (let i = 0; i < 3; i++) { if (reportInfo.logos[i]) { slide.addImage({ data: reportInfo.logos[i], x: currentX, y: curY, w: 1.5, h: lh, sizing: { type: 'contain' } }); currentX += 1.65; } }
         }
         curY += 0.65;
         slide.addText(reportInfo.title.toUpperCase(), { x: PAGE_MARGIN_SIDE, y: curY, w: CONTENT_W, fontSize: 16, bold: true, align: 'center', color: '0F172A' });
@@ -1364,8 +1364,8 @@ const App = () => {
     return (
       <div className={`bg-white w-[210mm] flex flex-col ${baseFontClass} relative box-border ${isFinal ? 'report-page-final' : 'mb-10 shadow-2xl rounded-2xl border border-slate-200 shrink-0'}`} style={{ height: '296.7mm', padding: '6mm 15mm 15mm 15mm', margin: '0 auto', pageBreakAfter: 'always' }}>
         <div className={`text-center pb-4 mb-5 flex-none ${headerBorderClass}`}>
-          <div className="flex justify-start items-center gap-6 mb-3 h-12">
-            {reportInfo.logos?.map((l, i) => l && <img key={i} src={l} className="h-full w-auto object-contain object-left" alt="" />)}
+          <div className="flex justify-start items-center gap-4 mb-3 h-14">
+            {reportInfo.logos?.map((l, i) => l && <img key={i} src={l} className="h-full max-w-[45mm] w-auto object-contain object-left" alt="" />)}
           </div>
           <h2 className={`text-xl uppercase mb-4 leading-tight ${headerTitleClass}`}>{reportInfo.title}</h2>
           <div className="text-left space-y-0.5">
