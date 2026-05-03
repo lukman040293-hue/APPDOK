@@ -9,52 +9,40 @@ import {
   Users, Share2 
 } from 'lucide-react';
 
-// --- ID Sesi Unik ---
+// ============================================================================
+// 1. KONFIGURASI GLOBAL & FIREBASE
+// ============================================================================
 const TAB_SESSION_ID = Math.random().toString(36).substring(2, 15);
+const DEFAULT_EMAIL_IZIN = ['at.file2020@gmail.com', 'admin@gmail.com'];
+const DEFAULT_ADMIN = ['admin@gmail.com', 'at.file2020@gmail.com'];
 
-// --- FIREBASE IMPORTS ---
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc, collection, deleteDoc, onSnapshot, writeBatch } from 'firebase/firestore';
 
-// --- INISIALISASI FIREBASE ---
-let app, auth, db, appId;
+const firebaseConfig = {
+    apiKey: "AIzaSyCvMuSGrojku0-UM4tWaNTK2EDlgqjWAlM",
+    authDomain: "apdok-f9052.firebaseapp.com",
+    projectId: "apdok-f9052",
+    storageBucket: "apdok-f9052.firebasestorage.app",
+    messagingSenderId: "839994843119",
+    appId: "1:839994843119:web:2590957adb4e6f1ce7a01a"
+};
+
+let app, auth, db;
 try {
-  // MENGGUNAKAN FIREBASE ANDA SEPENUHNYA
-  const firebaseConfig = {
-      apiKey: "AIzaSyCvMuSGrojku0-UM4tWaNTK2EDlgqjWAlM",
-      authDomain: "apdok-f9052.firebaseapp.com",
-      projectId: "apdok-f9052",
-      storageBucket: "apdok-f9052.firebasestorage.app",
-      messagingSenderId: "839994843119",
-      appId: "1:839994843119:web:2590957adb4e6f1ce7a01a"
-  };
   app = initializeApp(firebaseConfig);
   auth = getAuth(app);
   db = getFirestore(app);
-  
-  // Mengarahkan ke database asli Anda
-  appId = 'apdok-f9052';
-  
 } catch (e) {
   console.error("Gagal inisialisasi Firebase", e);
 }
 
-// --- ALGORITMA "SMART FINGERPRINT" ---
-const createPageHash = (pageData) => {
-  if (!pageData || !Array.isArray(pageData)) return "null";
-  try {
-    const lightData = pageData.map(p => ({
-      n: p?.note, b: p?.brightness, s: p?.saturation, z: p?.zoom, x: p?.panX, y: p?.panY, prog: p?.progress,
-      id: p?.src ? p.src.substring(0, 30) + p.src.length : null 
-    }));
-    return JSON.stringify(lightData);
-  } catch (e) {
-    return "error";
-  }
-};
+const appId = 'apdok-f9052'; 
 
-// --- MENCEGAH LOG ERROR KUOTA FIREBASE ---
+// ============================================================================
+// 2. FUNGSI UTILITAS & HELPER
+// ============================================================================
 const originalConsoleError = console.error;
 console.error = (...args) => {
   try {
@@ -75,11 +63,17 @@ console.error = (...args) => {
   originalConsoleError.apply(console, args);
 };
 
-// --- AKSES DEFAULT ---
-const DEFAULT_EMAIL_IZIN = ['at.file2020@gmail.com', 'admin@gmail.com'];
-const DEFAULT_ADMIN = ['admin@gmail.com', 'at.file2020@gmail.com'];
+const createPageHash = (pageData) => {
+  if (!pageData || !Array.isArray(pageData)) return "null";
+  try {
+    const lightData = pageData.map(p => ({
+      n: p?.note, b: p?.brightness, s: p?.saturation, z: p?.zoom, x: p?.panX, y: p?.panY, prog: p?.progress,
+      id: p?.src ? p.src.substring(0, 30) + p.src.length : null 
+    }));
+    return JSON.stringify(lightData);
+  } catch (e) { return "error"; }
+};
 
-// --- HELPER WARNA UNIK AUTHOR ---
 const getAvatarColor = (email) => {
     if (!email) return 'bg-slate-500';
     const colors = ['bg-blue-500', 'bg-emerald-500', 'bg-purple-500', 'bg-rose-500', 'bg-amber-500', 'bg-cyan-500', 'bg-indigo-500', 'bg-pink-500'];
@@ -93,6 +87,9 @@ const getInitials = (email) => {
     return email.substring(0, 2).toUpperCase();
 };
 
+// ============================================================================
+// 3. KOMPONEN KARTU FOTO (EDITOR)
+// ============================================================================
 const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleFileUpload }) => {
   const [tab, setTab] = useState('filter');
   const { zoom = 100, panX = 50, panY = 50, brightness = 100, saturation = 100, progress = 0 } = p || {};
@@ -207,14 +204,14 @@ const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleF
   );
 };
 
+// ============================================================================
+// 4. APLIKASI UTAMA (MAIN APP)
+// ============================================================================
 const App = () => {
+  // --- STATE AWAL & DATA ---
   const createNewPage = () => Array(6).fill(null).map(() => ({ id: Date.now() + Math.random(), src: null, note: '', brightness: 100, saturation: 100, progress: 0, zoom: 100, panX: 50, panY: 50 }));
   const defaultReportInfo = { 
     title: 'LAPORAN DOKUMENTASI LAPANGAN', 
-    project: '', 
-    department: '', 
-    contractor: '', 
-    consultant: '', 
     date: new Date().getFullYear().toString(), 
     logos: [null, null, null], 
     template: 'klasik',
@@ -238,53 +235,34 @@ const App = () => {
   const [activeProjectId, setActiveProjectId] = useState(null);
   const [projectAuthor, setProjectAuthor] = useState('');
   const [projectTime, setProjectTime] = useState(0);
-  const isInitialLoad = useRef(true);
   const [reportType, setReportType] = useState('umum'); 
   const [reportInfo, setReportInfo] = useState(defaultReportInfo);
-  
-  const [pagesData, setPagesData] = useState({ 
-    umum: [createNewPage()], 
-    progres: [createNewPage()] 
-  });
+  const [pagesData, setPagesData] = useState({ umum: [createNewPage()], progres: [createNewPage()] });
   
   const pages = useMemo(() => {
     const p = pagesData[reportType];
     return (p && Array.isArray(p) && p.length > 0) ? p : [createNewPage()];
   }, [pagesData, reportType]);
 
-  const setPages = (updater) => {
-    setPagesData(prev => {
-      const currentList = prev[reportType] || [createNewPage()];
-      return { 
-        ...prev, 
-        [reportType]: typeof updater === 'function' ? updater(currentList) : updater 
-      };
-    });
-  };
-
   const [currentPage, setCurrentPage] = useState(1);
+  const [statusMsg, setStatusMsg] = useState({ text: '', type: '' });
+  const [isOfflineMode, setIsOfflineMode] = useState(false);
+  
+  // PDF Generator States
   const [isPdfLoading, setIsPdfLoading] = useState(false);
   const [pdfAction, setPdfAction] = useState('download'); 
-  const [isPptLoading, setIsPptLoading] = useState(false);
-  const [isLibraryReady, setIsLibraryReady] = useState({ pdf: false, ppt: false });
-  const [statusMsg, setStatusMsg] = useState({ text: '', type: '' });
   const [bakedPages, setBakedPages] = useState(null);
   const [shouldTriggerDownload, setShouldTriggerDownload] = useState(false);
   
-  const lastSavedHashRef = useRef({}); 
-  const latestDataRef = useRef({ reportInfo, pagesData, reportType }); 
-  const [isOfflineMode, setIsOfflineMode] = useState(false); 
-  const isNewlyCreatedRef = useRef(false); 
-  const isSavingRef = useRef(false); 
-  const queuedSaveDataRef = useRef(null); 
-  const projectCacheRef = useRef({}); 
-  
+  const [isPptLoading, setIsPptLoading] = useState(false);
+  const [isLibraryReady, setIsLibraryReady] = useState({ pdf: false, ppt: false });
+
+  // Popups State
   const [showDeleteProjectModal, setShowDeleteProjectModal] = useState({ show: false, project: null });
   const [showReminderModal, setShowReminderModal] = useState(false); 
   const [showDeletePageModal, setShowDeletePageModal] = useState(false);
   const [pendingAction, setPendingAction] = useState(null); 
 
-  const [retryTrigger, setRetryTrigger] = useState(0);
   const [accessData, setAccessData] = useState({ allowed: [], admins: [] });
   const [showAccessModal, setShowAccessModal] = useState(false);
   const [newEmailUser, setNewEmailUser] = useState('');
@@ -292,6 +270,16 @@ const App = () => {
   const [previewZoom, setPreviewZoom] = useState(1);
   const [filterEmail, setFilterEmail] = useState('all'); 
   const [showRulesGuide, setShowRulesGuide] = useState(false); 
+
+  // --- REFS UTAMA ---
+  const latestDataRef = useRef({ reportInfo, pagesData, reportType });
+  const isInitialLoad = useRef(true);
+  const lastSavedHashRef = useRef({}); 
+  const isNewlyCreatedRef = useRef(false); 
+  const isSavingRef = useRef(false); 
+  const queuedSaveDataRef = useRef(null); 
+  const projectCacheRef = useRef({}); 
+  const [retryTrigger, setRetryTrigger] = useState(0);
 
   useEffect(() => {
     latestDataRef.current = { reportInfo, pagesData, reportType };
@@ -369,33 +357,28 @@ const App = () => {
     return { totalPages, templateCounts: tCounts };
   }, [filteredProjects]);
 
+  // --- LIBRARY LOADER (PDF & PPTX) ---
   useEffect(() => {
-    document.title = "Aplikasi Dokumentasi"; 
+    const loadScript = (src, id) => new Promise((resolve) => {
+      if (document.getElementById(id)) return resolve();
+      const s = document.createElement('script');
+      s.src = src; s.id = id; s.async = true; s.onload = resolve; s.onerror = () => resolve();
+      document.body.appendChild(s);
+    });
+    Promise.all([
+      loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js', 'lib-pdf'),
+      loadScript('https://cdn.jsdelivr.net/gh/gitbrent/PptxGenJS@3.12.0/dist/pptxgen.bundle.js', 'lib-ppt')
+    ]).then(() => setIsLibraryReady({ pdf: !!window.html2pdf, ppt: !!window.PptxGenJS }));
   }, []);
 
+  // --- AUTHENTICATION FIREBASE ---
   useEffect(() => {
-    const handleBeforeUnload = (e) => {
-      if (saveStatus === 'saving') {
-        e.preventDefault();
-        e.returnValue = ''; 
-      }
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [saveStatus]);
-
-  useEffect(() => {
-    if (!auth) {
-        setIsAppReady(true);
-        return;
-    }
-    
     const initAuth = async () => {
       try {
         await signInAnonymously(auth);
         setDebugError(''); 
       } catch (err) {
-        console.error("Auth Error:", err);
+        console.error("Auth Gagal:", err);
         setDebugError(err.message); 
         if (err.code === 'auth/operation-not-allowed' || err?.message?.includes('n.map')) {
             triggerOfflineMode('Setup Firebase Belum Selesai');
@@ -416,6 +399,7 @@ const App = () => {
     return () => unsubscribe();
   }, []);
 
+  // --- MEMUAT SESI AKTIF ---
   useEffect(() => {
     if (!user || isOfflineMode || !db) return;
     const fetchSession = async () => {
@@ -435,6 +419,7 @@ const App = () => {
     fetchSession();
   }, [user, isOfflineMode]);
 
+  // --- MEMUAT DAFTAR AKSES & PROYEK (REALTIME) ---
   useEffect(() => {
     if (!user || isOfflineMode || !db) return;
     try {
@@ -502,84 +487,7 @@ const App = () => {
     }
   }, [user, activeEmail, currentAdmins, isOfflineMode]);
 
-  useEffect(() => {
-    if (!user || !activeProjectId || view === 'dashboard' || isOfflineMode || !db) return;
-
-    try {
-        const projRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_projects', activeProjectId);
-        const unsubscribe = onSnapshot(projRef, async (snap) => {
-            if (!snap.exists()) {
-                if (isNewlyCreatedRef.current) return;
-                setStatusMsg({ text: 'Proyek dihapus oleh orang lain.', type: 'error' });
-                setView('dashboard'); setActiveProjectId(null); return;
-            }
-
-            isNewlyCreatedRef.current = false;
-            const data = snap.data();
-            if (data.lastSavedBy && data.lastSavedBy !== TAB_SESSION_ID) {
-                setStatusMsg({ text: 'Menyinkronkan Kolaborasi...', type: 'info' });
-                
-                try {
-                    let loadedInfo = data.reportInfo || defaultReportInfo;
-                    if (!loadedInfo.customMeta || !Array.isArray(loadedInfo.customMeta)) {
-                        loadedInfo = { ...loadedInfo, customMeta: [
-                            { id: 'm1', label: 'Pekerjaan', value: loadedInfo.project || '' },
-                            { id: 'm2', label: 'Instansi', value: loadedInfo.department || '' },
-                            { id: 'm3', label: 'Kontraktor', value: loadedInfo.contractor || '' },
-                            { id: 'm4', label: 'Konsultan', value: loadedInfo.consultant || '' }
-                        ]};
-                    }
-
-                    const umumPromises = []; const progresPromises = [];
-                    for(let i=0; i < (data.pageCountUmum || 0); i++) umumPromises.push(getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${activeProjectId}_umum_page_${i}`)));
-                    for(let i=0; i < (data.pageCountProgres || 0); i++) progresPromises.push(getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${activeProjectId}_progres_page_${i}`)));
-
-                    const [umumSnaps, progresSnaps] = await Promise.all([Promise.all(umumPromises), Promise.all(progresPromises)]);
-                    
-                    let loadedUmum = []; let loadedProgres = [];
-                    const initialHash = {};
-                    
-                    umumSnaps.forEach((pSnap, idx) => { 
-                        if(pSnap.exists()) { 
-                            const pData = pSnap.data().data; loadedUmum.push(pData); initialHash[`${activeProjectId}_umum_${idx}`] = createPageHash(pData);
-                        } else {
-                            const blankPage = createNewPage(); loadedUmum.push(blankPage); initialHash[`${activeProjectId}_umum_${idx}`] = createPageHash(blankPage);
-                        }
-                    });
-                    
-                    progresSnaps.forEach((pSnap, idx) => { 
-                        if(pSnap.exists()) { 
-                            const pData = pSnap.data().data; loadedProgres.push(pData); initialHash[`${activeProjectId}_progres_${idx}`] = createPageHash(pData);
-                        } else {
-                            const blankPage = createNewPage(); loadedProgres.push(blankPage); initialHash[`${activeProjectId}_progres_${idx}`] = createPageHash(blankPage);
-                        }
-                    });
-
-                    lastSavedHashRef.current = initialHash;
-                    lastSavedHashRef.current.reportInfo = JSON.stringify(loadedInfo);
-                    lastSavedHashRef.current.umumLength = loadedUmum.length;
-                    lastSavedHashRef.current.progresLength = loadedProgres.length;
-
-                    setReportInfo(loadedInfo);
-                    setProjectAuthor(data.authorEmail || activeEmail);
-                    setProjectTime(data.updatedAt || Date.now());
-                    setPagesData({
-                        umum: loadedUmum.length > 0 ? loadedUmum : [createNewPage()],
-                        progres: loadedProgres.length > 0 ? loadedProgres : [createNewPage()]
-                    });
-
-                    setStatusMsg({ text: 'Tersinkronisasi Real-time!', type: 'success' });
-                    setTimeout(() => setStatusMsg({ text: '', type: '' }), 2500);
-                } catch (e) { console.error("Gagal Live Sync", e); }
-            }
-        });
-
-        return () => unsubscribe();
-    } catch (e) {
-        console.error("Path ref error:", e);
-    }
-  }, [user, activeProjectId, view, isOfflineMode, activeEmail]);
-
+  // --- FUNGSI LOGIN / LOGOUT ---
   const handleLogin = async (e) => {
     e.preventDefault();
     const email = emailInput.trim().toLowerCase();
@@ -694,14 +602,7 @@ const App = () => {
     } catch (e) { setStatusMsg({ text: 'Gagal memperbarui', type: 'error' }); }
   };
 
-  useEffect(() => {
-    if (view === 'preview') {
-      const screenW = window.innerWidth;
-      const targetZoom = screenW < 850 ? Math.max(0.3, (screenW - 32) / 794) : 1;
-      setPreviewZoom(targetZoom);
-    }
-  }, [view]);
-
+  // --- FUNGSI CLOUD SYNC & AUTO SAVE ---
   const saveToCloudNow = async (id, info, pagesObj, type, emailToSave, timeToSave) => {
     if (!user || !id) return Promise.resolve(false);
     if (isOfflineMode || !db) return Promise.resolve(false);
@@ -831,6 +732,35 @@ const App = () => {
     return () => clearInterval(interval);
   }, [activeProjectId, user, view, activeEmail, projectAuthor, projectTime, isOfflineMode]);
 
+  const saveCurrentProject = async () => {
+    if (activeProjectId) {
+      if (isProjectEmpty(reportInfo, pagesData)) {
+         setStatusMsg({ text: 'Proyek Masih Kosong!', type: 'info' });
+         setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
+         return;
+      }
+      
+      if (!checkHasChanges(activeProjectId, reportInfo, pagesData)) {
+          setStatusMsg({ text: 'Sudah Tersimpan!', type: 'success' });
+          setTimeout(() => setStatusMsg({ text: '', type: '' }), 1500);
+          return;
+      }
+
+      const isOwner = activeEmail === projectAuthor;
+      setStatusMsg({ text: 'Menyinkronkan...', type: 'info' });
+      
+      const success = await saveToCloudNow(activeProjectId, reportInfo, pagesData, reportType, projectAuthor, isOwner ? Date.now() : projectTime);
+      
+      if (success) {
+          setStatusMsg({ text: 'Tersimpan!', type: 'success' });
+      } else if (queuedSaveDataRef.current) {
+          setStatusMsg({ text: 'Antrean Tersimpan!', type: 'success' });
+      }
+      setTimeout(() => setStatusMsg({ text: '', type: '' }), 2500);
+    }
+  };
+
+  // --- CRUD MANAJEMEN PROYEK ---
   const createNewProject = async () => {
     const newId = `proj_${Date.now()}`;
     const newInfo = {...defaultReportInfo, title: 'LAPORAN DOKUMENTASI LAPANGAN'};
@@ -1023,87 +953,343 @@ const App = () => {
     } else if (view === 'dashboard') sessionStorage.removeItem('docufield_active_session');
   }, [view, activeProjectId, reportType, currentPage, reportInfo, projectAuthor, projectTime]);
 
-  const saveCurrentProject = async () => {
-    if (activeProjectId) {
-      if (isProjectEmpty(reportInfo, pagesData)) {
-         setStatusMsg({ text: 'Proyek Masih Kosong!', type: 'info' });
-         setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
-         return;
-      }
-      
-      if (!checkHasChanges(activeProjectId, reportInfo, pagesData)) {
-          setStatusMsg({ text: 'Sudah Tersimpan!', type: 'success' });
-          setTimeout(() => setStatusMsg({ text: '', type: '' }), 1500);
-          return;
-      }
-
-      const isOwner = activeEmail === projectAuthor;
-      setStatusMsg({ text: 'Menyinkronkan...', type: 'info' });
-      
-      const success = await saveToCloudNow(activeProjectId, reportInfo, pagesData, reportType, projectAuthor, isOwner ? Date.now() : projectTime);
-      
-      if (success) {
-          setStatusMsg({ text: 'Tersimpan!', type: 'success' });
-      } else if (queuedSaveDataRef.current) {
-          setStatusMsg({ text: 'Antrean Tersimpan!', type: 'success' });
-      }
-      setTimeout(() => setStatusMsg({ text: '', type: '' }), 2500);
+  // --- PENGOLAHAN GAMBAR & GENERATOR PDF ---
+  useEffect(() => {
+    if (view === 'preview') {
+      const screenW = window.innerWidth;
+      const targetZoom = screenW < 850 ? Math.max(0.3, (screenW - 32) / 794) : 1;
+      setPreviewZoom(targetZoom);
     }
+  }, [view]);
+
+  const processInitialUpload = (dataUrl) => {
+    return new Promise((r) => {
+      const img = new Image(); img.src = dataUrl;
+      img.onload = () => {
+        const canvas = document.createElement('canvas'); 
+        const max = 800; 
+        let w = img.width, h = img.height;
+        if (w > max || h > max) { if (w > h) { h = Math.round((max / w) * h); w = max; } else { w = Math.round((max / h) * w); h = max; } }
+        canvas.width = w; canvas.height = h; 
+        const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, w, h);
+        r(canvas.toDataURL('image/jpeg', 0.8)); 
+      };
+      img.onerror = () => r(null);
+    });
+  };
+
+  const handleFileUpload = async (pIdx, sIdx, e) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    setStatusMsg({ text: 'Mengolah Foto...', type: 'info' });
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const optimized = await processInitialUpload(ev.target.result);
+      if (optimized) {
+        setPagesData(prev => {
+          const n = {...prev};
+          const updatedPage = [...n[reportType][pIdx]];
+          updatedPage[sIdx] = { ...updatedPage[sIdx], src: optimized, brightness: 100, saturation: 100, zoom: 100, panX: 50, panY: 50 };
+          n[reportType][pIdx] = updatedPage;
+          return n;
+        });
+        setStatusMsg({ text: 'Siap!', type: 'success' });
+      } else {
+        setStatusMsg({ text: 'Gagal olah foto', type: 'error' });
+      }
+      setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleMegaUpload = async (e) => {
+    const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
+    if (files.length === 0) return;
+    const curIdx = currentPage - 1; 
+    
+    setPagesData(prev => {
+      const n = { ...prev };
+      const currentPages = [...n[reportType]];
+      let newPageRef = currentPages[curIdx] ? [...currentPages[curIdx]] : createNewPage();
+      
+      const emptySlots = []; newPageRef.forEach((s, i) => { if (!s?.src) emptySlots.push(i); });
+      if (emptySlots.length === 0) { setStatusMsg({ text: 'Penuh!', type: 'error' }); setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000); return n; }
+      
+      const limit = Math.min(files.length, emptySlots.length);
+      setStatusMsg({ text: `Proses ${limit} foto...`, type: 'info' });
+      
+      const processFiles = async () => {
+        for (let i = 0; i < limit; i++) {
+          const objectUrl = URL.createObjectURL(files[i]);
+          const cropped = await processInitialUpload(objectUrl);
+          URL.revokeObjectURL(objectUrl);
+          if (cropped) newPageRef[emptySlots[i]] = { ...(newPageRef[emptySlots[i]] || {}), src: cropped, brightness: 100, saturation: 100, zoom: 100, panX: 50, panY: 50 };
+        }
+        setPagesData(p => {
+          const n2 = {...p};
+          const cPages = [...n2[reportType]];
+          cPages[curIdx] = newPageRef;
+          n2[reportType] = cPages;
+          return n2;
+        });
+        setStatusMsg({ text: 'Selesai!', type: 'success' }); setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
+      };
+      processFiles();
+      
+      return n;
+    });
+    
+    e.target.value = '';
+  };
+
+  const updateSpecificPhoto = (pIdx, sIdx, key, val) => {
+    setPagesData(prev => {
+      const n = { ...prev };
+      if (!n[reportType]) return prev;
+      const currentPages = [...n[reportType]];
+      if (!currentPages[pIdx]) return prev;
+      const currentPageArray = [...currentPages[pIdx]];
+      currentPageArray[sIdx] = { ...(currentPageArray[sIdx] || {}), [key]: val };
+      currentPages[pIdx] = currentPageArray;
+      n[reportType] = currentPages;
+      return n;
+    });
+  };
+
+  const clearSpecificPhoto = (pIdx, sIdx) => {
+    setPagesData(prev => {
+      const n = { ...prev };
+      const currentPages = [...n[reportType]];
+      const currentPageArray = [...currentPages[pIdx]];
+      currentPageArray[sIdx] = { id: Date.now(), src: null, note: '', brightness: 100, saturation: 100, progress: 0, zoom: 100, panX: 50, panY: 50 };
+      currentPages[pIdx] = currentPageArray;
+      n[reportType] = currentPages;
+      return n;
+    });
+  };
+
+  const executeDeleteAllPhotos = () => {
+    setPagesData(prev => { 
+        const n = {...prev}; 
+        const cPages = [...n[reportType]];
+        cPages[currentPage - 1] = createNewPage();
+        n[reportType] = cPages;
+        return n; 
+    });
+    setStatusMsg({ text: 'Dikosongkan!', type: 'success' }); 
+    setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
+  };
+
+  const handleAddPage = () => {
+    if (pages.length >= 50) { setStatusMsg({ text: 'Maksimal 50 Halaman!', type: 'error' }); setTimeout(() => setStatusMsg({ text: '', type: '' }), 3000); return; }
+    setPagesData(prev => {
+        const n = {...prev};
+        n[reportType] = [...(n[reportType] || []), createNewPage()];
+        return n;
+    });
+    setCurrentPage(pages.length + 1);
+  };
+
+  const executeDeletePage = () => {
+    setShowDeletePageModal(false);
+    if (pages.length <= 1) { executeDeleteAllPhotos(); return; }
+    const newPages = pages.filter((_, idx) => idx !== currentPage - 1);
+    setPagesData(prev => {
+        const n = {...prev};
+        n[reportType] = newPages;
+        return n;
+    });
+    if (currentPage > newPages.length) setCurrentPage(newPages.length);
+    setStatusMsg({ text: 'Halaman Dihapus!', type: 'success' });
+    setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
+  };
+
+  const processLogoUpload = (dataUrl) => {
+    return new Promise((r) => {
+      const img = new Image(); img.src = dataUrl;
+      img.onload = () => {
+        const canvas = document.createElement('canvas'); const max = 300;
+        let w = img.width, h = img.height;
+        if (w > max || h > max) { if (w > h) { h = Math.round((max / w) * h); w = max; } else { w = Math.round((max / h) * w); h = max; } }
+        canvas.width = w; canvas.height = h; const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, w, h);
+        r(canvas.toDataURL('image/png'));
+      };
+      img.onerror = () => r(null);
+    });
+  };
+
+  const handleLogoUpload = async (idx, e) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    setStatusMsg({ text: 'Memproses...', type: 'info' });
+    const objectUrl = URL.createObjectURL(file);
+    const cropped = await processLogoUpload(objectUrl);
+    URL.revokeObjectURL(objectUrl);
+    if (cropped) { 
+        const n = [...(reportInfo.logos || [null, null, null])]; 
+        n[idx] = cropped; 
+        setReportInfo({...reportInfo, logos: n}); 
+        setStatusMsg({ text: 'Logo Terpasang!', type: 'success' }); 
+    }
+    setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
+    e.target.value = '';
+  };
+
+  const removeLogo = (idx) => { 
+      const n = [...(reportInfo.logos || [null, null, null])]; 
+      n[idx] = null; 
+      setReportInfo({...reportInfo, logos: n}); 
+  };
+  
+  const switchTab = (targetMode) => { 
+      if (targetMode === reportType) return; 
+      setReportType(targetMode); 
+      setReportInfo({ ...reportInfo, title: targetMode === 'progres' ? 'LAPORAN DOKUMENTASI PROGRES LAPANGAN' : 'LAPORAN DOKUMENTASI LAPANGAN' }); 
+      setCurrentPage(1); 
+  };
+
+  const downloadMentahan = () => {
+    try {
+      const data = { docufield_mentahan: true, reportInfo, reportType, pagesData };
+      const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = `Mentahan_${reportInfo.project || 'Data'}.json`; a.click();
+      setStatusMsg({ text: 'Mentahan Disimpan!', type: 'success' });
+    } catch { setStatusMsg({ text: 'Gagal simpan', type: 'error' }); }
+    setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
+  };
+
+  const loadMentahan = (e) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    setStatusMsg({ text: 'Membaca File...', type: 'info' });
+    const reader = new FileReader();
+    
+    reader.onload = async (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (!data.docufield_mentahan) {
+            setStatusMsg({ text: 'Format file tidak dikenali!', type: 'error' });
+            setTimeout(() => setStatusMsg({ text: '', type: '' }), 2500);
+            return;
+        }
+
+        const newId = `proj_${Date.now()}`;
+        setActiveProjectId(newId);
+        
+        let loadedInfo = data.reportInfo || defaultReportInfo;
+        if (!loadedInfo.customMeta || !Array.isArray(loadedInfo.customMeta)) {
+           loadedInfo = { ...loadedInfo, customMeta: [
+                 { id: 'm1', label: 'Pekerjaan', value: loadedInfo.project || '' },
+                 { id: 'm2', label: 'Instansi', value: loadedInfo.department || '' },
+                 { id: 'm3', label: 'Kontraktor', value: loadedInfo.contractor || '' },
+                 { id: 'm4', label: 'Konsultan', value: loadedInfo.consultant || '' }
+             ]};
+        }
+        
+        setReportInfo(loadedInfo); setReportType(data.reportType || 'umum'); 
+        setPagesData({
+          umum: (data.pagesData?.umum && Array.isArray(data.pagesData.umum)) ? data.pagesData.umum : [createNewPage()],
+          progres: (data.pagesData?.progres && Array.isArray(data.pagesData.progres)) ? data.pagesData.progres : [createNewPage()]
+        });
+        setCurrentPage(1); setView('edit');
+        
+        setStatusMsg({ text: 'Berhasil Dibuka!', type: 'success' });
+        setTimeout(() => setStatusMsg({ text: '', type: '' }), 1500);
+        
+        if (user && !isOfflineMode) {
+            saveToCloudNow(newId, loadedInfo, data.pagesData, data.reportType || 'umum', activeEmail, Date.now());
+        }
+      } catch (err) { 
+        setStatusMsg({ text: 'Gagal / File Rusak', type: 'error' }); 
+        setTimeout(() => setStatusMsg({ text: '', type: '' }), 3000); 
+      }
+    };
+    reader.readAsText(file); e.target.value = '';
+  };
+
+  const executePendingAction = () => {
+    setShowReminderModal(false);
+    if (pendingAction === 'dashboard') {
+      setView('dashboard'); 
+      setPagesData({ umum: [createNewPage()], progres: [createNewPage()] }); 
+      setBakedPages(null); setActiveProjectId(null); 
+    } else if (pendingAction === 'logout') handleLogout();
+    setPendingAction(null);
+  };
+
+  const saveMentahanAndProceed = () => { downloadMentahan(); setTimeout(() => executePendingAction(), 300); };
+
+  // --- GENERATOR FILE PDF & BAKING (Perbaikan PDF Mencegah Blank + Kualitas HD + Anti-Distorsi) ---
+  const bakeImageFilters = (dataUrl, brightness, saturation, zoom = 100, panX = 50, panY = 50) => {
+    if (!dataUrl) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      const img = new Image(); img.src = dataUrl;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        // PERBAIKAN: TARGET RENDER MENGGUNAKAN RASIO ASLI KOTAK PDF AGAR TIDAK GEPENG (880x500 -> Rasio 1.76)
+        const targetW = 880, targetH = 500; canvas.width = targetW; canvas.height = targetH;
+        const ctx = canvas.getContext('2d');
+        ctx.filter = `brightness(${brightness}%) saturate(${saturation}%)`;
+        const targetRatio = targetW / targetH; const imgRatio = img.width / img.height;
+        let sX, sY, sW, sH;
+        if (imgRatio > targetRatio) { sH = img.height; sW = img.height * targetRatio; sX = (img.width - sW) / 2; sY = 0; } 
+        else { sW = img.width; sH = img.width / targetRatio; sX = 0; sY = (img.height - sH) / 2; }
+        const scale = 100 / zoom; const nw = sW * scale; const nh = sH * scale;
+        const finalX = sX + ((sW - nw) * (panX / 100)); const finalY = sY + ((sH - nh) * (panY / 100));
+        ctx.drawImage(img, finalX, finalY, nw, nh, 0, 0, targetW, targetH);
+        resolve(canvas.toDataURL('image/jpeg', 0.95)); 
+      };
+      img.onerror = () => resolve(dataUrl);
+    });
   };
 
   const triggerPdfBaking = async (action = 'download') => {
+    if (!isLibraryReady.pdf) return;
     setPdfAction(action);
     setIsPdfLoading(true); 
-    setStatusMsg({ text: action === 'share' ? 'Menyiapkan File...' : 'Menyiapkan PDF...', type: 'info' });
+    setStatusMsg({ text: action === 'share' ? 'Menyiapkan File...' : 'Membangun PDF...', type: 'info' });
+    
     try {
       const processed = await Promise.all(pages.map(async (page) => {
         return await Promise.all(page.map(async (photo) => {
           if (!photo?.src) return photo;
-          const isModified = photo.brightness !== 100 || photo.saturation !== 100 || photo.zoom !== 100 || photo.panX !== 50 || photo.panY !== 50;
-          if (isModified) {
-              const finalSrc = await bakeImageFilters(photo.src, photo.brightness, photo.saturation, photo.zoom, photo.panX, photo.panY);
-              return { ...photo, src: finalSrc, isBaked: true }; 
-          } else {
-              return { ...photo, isBaked: true };
-          }
+          const finalSrc = await bakeImageFilters(photo.src, photo.brightness, photo.saturation, photo.zoom, photo.panX, photo.panY);
+          return { ...photo, src: finalSrc, isBaked: true }; 
         }));
       }));
-      setBakedPages(processed); setShouldTriggerDownload(true);
-    } catch (err) { setIsPdfLoading(false); setStatusMsg({ text: 'Gagal proses', type: 'error' }); }
-  };
-
-  useEffect(() => {
-    const loadScript = (src, id) => new Promise((resolve) => {
-      if (document.getElementById(id)) return resolve();
-      const s = document.createElement('script');
-      s.src = src; s.id = id; s.async = true; s.onload = resolve; s.onerror = () => resolve();
-      document.body.appendChild(s);
-    });
-    if(!isLibraryReady.pdf) {
-      Promise.all([
-        loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js', 'lib-pdf'),
-        loadScript('https://cdn.jsdelivr.net/gh/gitbrent/PptxGenJS@3.12.0/dist/pptxgen.bundle.js', 'lib-ppt')
-      ]).then(() => setIsLibraryReady({ pdf: !!window.html2pdf, ppt: !!window.PptxGenJS }));
+      setBakedPages(processed); 
+      setShouldTriggerDownload(true);
+    } catch (err) { 
+      setIsPdfLoading(false); 
+      setStatusMsg({ text: 'Gagal proses', type: 'error' }); 
+      setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
     }
-  }, [isLibraryReady.pdf]);
+  };
 
   useEffect(() => {
     if (shouldTriggerDownload && bakedPages) {
       const generatePDF = async () => {
         const element = document.getElementById('pdf-render-area');
-        const images = element.querySelectorAll('img');
-        await Promise.all(Array.from(images).map(img => img.complete ? Promise.resolve() : new Promise(r => img.onload = r)));
+        if (!element) return;
+        
+        const images = Array.from(element.querySelectorAll('img'));
+        await Promise.all(images.map(img => {
+            if (img.complete) return Promise.resolve();
+            return new Promise(r => { img.onload = r; img.onerror = r; });
+        }));
+        
         const cleanTitle = (reportInfo.title || 'LAPORAN_DOKUMENTASI').replace(/ /g, '_');
         
         const options = { 
             margin: 0, 
             filename: `${cleanTitle}.pdf`, 
-            image: { type: 'jpeg', quality: 0.85 }, 
-            html2canvas: { scale: 1.5, useCORS: true, width: 794, windowWidth: 794, scrollX: 0, scrollY: 0, x: 0, y: 0 }, 
+            image: { type: 'jpeg', quality: 0.95 }, 
+            // PERBAIKAN PDF: Scale ditingkatkan menjadi 2 agar PDF lebih tajam, tebal, dan profesional.
+            html2canvas: { scale: 2, useCORS: true, width: 794, windowWidth: 794, scrollX: 0, scrollY: 0, x: 0, y: 0 }, 
             jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } 
         };
 
         try { 
+            window.scrollTo(0, 0); 
             if (pdfAction === 'share') {
                 const pdfBlob = await window.html2pdf().set(options).from(element).output('blob');
                 const file = new File([pdfBlob], `${cleanTitle}.pdf`, { type: 'application/pdf' });
@@ -1125,269 +1311,20 @@ const App = () => {
             }
         } 
         catch (e) {
-            if (e.name !== 'AbortError') console.error(e);
+            console.error(e);
             setStatusMsg({ text: e.name === 'AbortError' ? 'Batal Dibagikan' : 'Dibatalkan / Selesai', type: 'info' });
         }
         finally { 
-            setIsPdfLoading(false); setBakedPages(null); setShouldTriggerDownload(false); 
+            setIsPdfLoading(false); 
+            setBakedPages(null); 
+            setShouldTriggerDownload(false); 
             setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000); 
         }
       };
-      generatePDF();
+      
+      setTimeout(generatePDF, 1500); 
     }
   }, [shouldTriggerDownload, bakedPages, reportInfo, pdfAction]);
-
-  const downloadMentahan = () => {
-    try {
-      const data = { docufield_mentahan: true, reportInfo, reportType, pagesData };
-      const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = `Mentahan_${reportInfo.project || 'Data'}.json`; a.click();
-      setStatusMsg({ text: 'Mentahan Disimpan!', type: 'success' });
-    } catch { setStatusMsg({ text: 'Gagal simpan', type: 'error' }); }
-    setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
-  };
-
-  const loadMentahan = (e) => {
-    const file = e.target.files?.[0]; if (!file) return;
-    setStatusMsg({ text: 'Membaca File...', type: 'info' });
-    const reader = new FileReader();
-    
-    reader.onload = async (ev) => {
-      try {
-        const data = JSON.parse(ev.target.result);
-        
-        // SAFETY NET: Tolak jika bukan file JSON mentahan Docufield
-        if (!data.docufield_mentahan) {
-            setStatusMsg({ text: 'Format file tidak dikenali!', type: 'error' });
-            setTimeout(() => setStatusMsg({ text: '', type: '' }), 2500);
-            return;
-        }
-
-        const newId = `proj_${Date.now()}`;
-        const now = Date.now();
-        setActiveProjectId(newId);
-        
-        isNewlyCreatedRef.current = true; 
-        
-        let loadedInfo = data.reportInfo || defaultReportInfo;
-        // SAFETY NET: Pastikan struktur object tidak rusak
-        if (!loadedInfo.customMeta || !Array.isArray(loadedInfo.customMeta)) {
-           loadedInfo = { ...loadedInfo, customMeta: [
-                 { id: 'm1', label: 'Pekerjaan', value: loadedInfo.project || '' },
-                 { id: 'm2', label: 'Instansi', value: loadedInfo.department || '' },
-                 { id: 'm3', label: 'Kontraktor', value: loadedInfo.contractor || '' },
-                 { id: 'm4', label: 'Konsultan', value: loadedInfo.consultant || '' }
-             ]};
-        }
-        
-        const initialHash = { 
-          reportInfo: JSON.stringify(loadedInfo), 
-          umumLength: data.pagesData?.umum?.length || 0, 
-          progresLength: data.pagesData?.progres?.length || 0 
-        }; 
-        lastSavedHashRef.current = initialHash;
-
-        setReportInfo(loadedInfo); setReportType(data.reportType || 'umum'); 
-        setPagesData({
-          umum: (data.pagesData?.umum && Array.isArray(data.pagesData.umum)) ? data.pagesData.umum : [createNewPage()],
-          progres: (data.pagesData?.progres && Array.isArray(data.pagesData.progres)) ? data.pagesData.progres : [createNewPage()]
-        });
-        setCurrentPage(1); setProjectAuthor(activeEmail); setProjectTime(now); setView('edit');
-        
-        setStatusMsg({ text: 'Berhasil Dibuka!', type: 'success' });
-        setTimeout(() => setStatusMsg({ text: '', type: '' }), 1500);
-        
-        if (user && !isOfflineMode && !isProjectEmpty(loadedInfo, data.pagesData)) {
-            saveToCloudNow(newId, loadedInfo, data.pagesData, data.reportType || 'umum', activeEmail, now);
-        }
-      } catch (err) { 
-        console.error("Kesalahan muat:", err);
-        setStatusMsg({ text: 'Gagal / File Rusak', type: 'error' }); 
-        setTimeout(() => setStatusMsg({ text: '', type: '' }), 3000); 
-      }
-    };
-    reader.readAsText(file); e.target.value = '';
-  };
-
-  const executePendingAction = () => {
-    setShowReminderModal(false);
-    if (pendingAction === 'dashboard') {
-      setStatusMsg({ text: 'Kembali ke Dashboard...', type: 'info' });
-      if (activeProjectId && !isOfflineMode) {
-        const currentData = latestDataRef.current;
-        if (!isProjectEmpty(currentData.reportInfo, currentData.pagesData)) {
-            if (checkHasChanges(activeProjectId, currentData.reportInfo, currentData.pagesData)) {
-                const isOwner = activeEmail === projectAuthor;
-                const timeToSave = isOwner ? Date.now() : projectTime;
-                saveToCloudNow(activeProjectId, currentData.reportInfo, currentData.pagesData, currentData.reportType, projectAuthor, timeToSave); 
-            }
-        }
-      }
-      setView('dashboard'); 
-      setPagesData({ umum: [createNewPage()], progres: [createNewPage()] }); 
-      setBakedPages(null); setActiveProjectId(null); 
-      setTimeout(() => setStatusMsg({ text: '', type: '' }), 1000);
-    } else if (pendingAction === 'logout') handleLogout();
-    setPendingAction(null);
-  };
-
-  const saveMentahanAndProceed = () => { downloadMentahan(); setTimeout(() => executePendingAction(), 300); };
-
-  const processInitialUpload = (dataUrl) => {
-    return new Promise((r) => {
-      const img = new Image(); img.src = dataUrl;
-      img.onload = () => {
-        const canvas = document.createElement('canvas'); 
-        const max = 640; 
-        let w = img.width, h = img.height;
-        if (w > max || h > max) { if (w > h) { h = Math.round((max / w) * h); w = max; } else { w = Math.round((max / h) * w); h = max; } }
-        canvas.width = w; canvas.height = h; 
-        const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, w, h);
-        r(canvas.toDataURL('image/jpeg', 0.65)); 
-      };
-      img.onerror = () => r(null);
-    });
-  };
-
-  const processLogoUpload = (dataUrl) => {
-    return new Promise((r) => {
-      const img = new Image(); img.src = dataUrl;
-      img.onload = () => {
-        const canvas = document.createElement('canvas'); const max = 300;
-        let w = img.width, h = img.height;
-        if (w > max || h > max) { if (w > h) { h = Math.round((max / w) * h); w = max; } else { w = Math.round((max / h) * w); h = max; } }
-        canvas.width = w; canvas.height = h; const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, w, h);
-        r(canvas.toDataURL('image/png'));
-      };
-      img.onerror = () => r(null);
-    });
-  };
-
-  const bakeImageFilters = (dataUrl, brightness, saturation, zoom = 100, panX = 50, panY = 50) => {
-    if (!dataUrl) return Promise.resolve(null);
-    return new Promise((resolve) => {
-      const img = new Image(); img.src = dataUrl;
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const targetW = 810, targetH = 492; canvas.width = targetW; canvas.height = targetH;
-        const ctx = canvas.getContext('2d');
-        ctx.filter = `brightness(${brightness}%) saturate(${saturation}%)`;
-        const targetRatio = targetW / targetH; const imgRatio = img.width / img.height;
-        let sX, sY, sW, sH;
-        if (imgRatio > targetRatio) { sH = img.height; sW = img.height * targetRatio; sX = (img.width - sW) / 2; sY = 0; } 
-        else { sW = img.width; sH = img.width / targetRatio; sX = 0; sY = (img.height - sH) / 2; }
-        const scale = 100 / zoom; const nw = sW * scale; const nh = sH * scale;
-        const finalX = sX + ((sW - nw) * (panX / 100)); const finalY = sY + ((sH - nh) * (panY / 100));
-        ctx.drawImage(img, finalX, finalY, nw, nh, 0, 0, targetW, targetH);
-        resolve(canvas.toDataURL('image/jpeg', 0.9)); 
-      };
-      img.onerror = () => resolve(dataUrl);
-    });
-  };
-
-  const updateSpecificPhoto = (pIdx, sIdx, key, val) => {
-    setPages(prev => {
-      const n = [...prev]; if (!n[pIdx]) return prev;
-      const npo = [...n[pIdx]]; npo[sIdx] = { ...(npo[sIdx] || {}), [key]: val };
-      n[pIdx] = npo; return n;
-    });
-  };
-
-  const clearSpecificPhoto = (pIdx, sIdx) => {
-    setPages(prev => {
-      const n = [...prev]; if (!n[pIdx]) return prev; const np = [...n[pIdx]];
-      np[sIdx] = { id: np[sIdx]?.id || Date.now(), src: null, note: np[sIdx]?.note || '', brightness: 100, saturation: 100, progress: 0, zoom: 100, panX: 50, panY: 50 };
-      n[pIdx] = np; return n;
-    });
-  };
-
-  const handleFileUpload = async (pIdx, sIdx, e) => {
-    const file = e.target.files?.[0]; if (!file) return;
-    setStatusMsg({ text: 'Mengolah Foto...', type: 'info' });
-    const objectUrl = URL.createObjectURL(file);
-    const cropped = await processInitialUpload(objectUrl);
-    URL.revokeObjectURL(objectUrl); 
-    if (cropped) {
-      setPages(prev => {
-        const n = [...prev]; 
-        // SAFETY NET: Jika index halaman tidak ketemu
-        if (!n[pIdx]) n[pIdx] = createNewPage()[0]; 
-        const np = [...n[pIdx]];
-        np[sIdx] = { ...np[sIdx], src: cropped, brightness: 100, saturation: 100, zoom: 100, panX: 50, panY: 50 };
-        n[pIdx] = np; return n;
-      });
-      setStatusMsg({ text: 'Siap!', type: 'success' });
-    } else {
-      setStatusMsg({ text: 'Gagal muat foto', type: 'error' });
-    }
-    setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
-    e.target.value = '';
-  };
-
-  const handleMegaUpload = async (e) => {
-    const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
-    if (files.length === 0) return;
-    const curIdx = currentPage - 1; let updatedPages = [...pages]; 
-    
-    // SAFETY NET: Mengisi halaman kosong dengan template default jika tiba-tiba hilang
-    let newPageRef = updatedPages[curIdx] ? [...updatedPages[curIdx]] : createNewPage()[0];
-    
-    const emptySlots = []; newPageRef.forEach((s, i) => { if (!s?.src) emptySlots.push(i); });
-    if (emptySlots.length === 0) { setStatusMsg({ text: 'Penuh!', type: 'error' }); setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000); return; }
-    const limit = Math.min(files.length, emptySlots.length);
-    setStatusMsg({ text: `Proses ${limit} foto...`, type: 'info' });
-    for (let i = 0; i < limit; i++) {
-      const objectUrl = URL.createObjectURL(files[i]);
-      const cropped = await processInitialUpload(objectUrl);
-      URL.revokeObjectURL(objectUrl);
-      if (cropped) newPageRef[emptySlots[i]] = { ...(newPageRef[emptySlots[i]] || {}), src: cropped, brightness: 100, saturation: 100, zoom: 100, panX: 50, panY: 50 };
-    }
-    updatedPages[curIdx] = newPageRef; setPages(updatedPages);
-    setStatusMsg({ text: 'Selesai!', type: 'success' }); setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
-    e.target.value = '';
-  };
-
-  const executeDeleteAllPhotos = () => {
-    setPages(prev => { const n = [...prev]; n[currentPage - 1] = createNewPage()[0]; return n; });
-    setStatusMsg({ text: 'Dikosongkan!', type: 'success' }); setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
-  };
-
-  const handleAddPage = () => {
-    if (pages.length >= 50) { setStatusMsg({ text: 'Maksimal 50 Halaman!', type: 'error' }); setTimeout(() => setStatusMsg({ text: '', type: '' }), 3000); return; }
-    setPages([...pages, createNewPage()[0]]);
-    setCurrentPage(pages.length + 1);
-  };
-
-  const executeDeletePage = () => {
-    setShowDeletePageModal(false);
-    if (pages.length <= 1) { executeDeleteAllPhotos(); return; }
-    const newPages = pages.filter((_, idx) => idx !== currentPage - 1);
-    setPages(newPages);
-    if (currentPage > newPages.length) setCurrentPage(newPages.length);
-    setStatusMsg({ text: 'Halaman Dihapus!', type: 'success' });
-    setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
-  };
-
-  const handleLogoUpload = async (idx, e) => {
-    const file = e.target.files?.[0]; if (!file) return;
-    setStatusMsg({ text: 'Memproses...', type: 'info' });
-    const objectUrl = URL.createObjectURL(file);
-    const cropped = await processLogoUpload(objectUrl);
-    URL.revokeObjectURL(objectUrl);
-    if (cropped) { const n = [...(reportInfo.logos || [null, null, null])]; n[idx] = cropped; setReportInfo({...reportInfo, logos: n}); setStatusMsg({ text: 'Logo Terpasang!', type: 'success' }); }
-    setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
-    e.target.value = '';
-  };
-
-  const removeLogo = (idx) => { const n = [...(reportInfo.logos || [null, null, null])]; n[idx] = null; setReportInfo({...reportInfo, logos: n}); };
-  
-  const switchTab = (targetMode) => { 
-      if (targetMode === reportType) return; 
-      setReportType(targetMode); 
-      setReportInfo({ ...reportInfo, title: targetMode === 'progres' ? 'LAPORAN DOKUMENTASI PROGRES LAPANGAN' : 'LAPORAN DOKUMENTASI LAPANGAN' }); 
-      setCurrentPage(1); 
-  };
 
   const downloadPPTX = async () => {
     if (!isLibraryReady.ppt) return;
@@ -1401,7 +1338,7 @@ const App = () => {
       for (let i = 0; i < 6; i++) {
         const col = i % 2, row = Math.floor(i / 2);
         const x = PAGE_MARGIN_SIDE + (col * (BOX_W + GAP)), y = gridStartY + (row * (BOX_H + 0.15));
-        const imgX = x + 0.1, imgY = y + 0.1, imgW = BOX_W - 0.2, imgH = 1.97;
+        const imgX = x + 0.1, imgY = y + 0.1, imgW = BOX_W - 0.2, imgH = 1.85; // Menyesuaikan rasio foto di PPTX agar tidak gepeng
         masterObjects.push({ rect: { x, y, w: BOX_W, h: BOX_H, fill: { color: 'FFFFFF' }, line: { color: 'E2E8F0', width: 1 }, rectRadius: 0.05 } });
         masterObjects.push({ placeholder: { options: { name: `pic${i}`, type: 'pic', x: imgX, y: imgY, w: imgW, h: imgH }, text: '' } });
       }
@@ -1415,7 +1352,6 @@ const App = () => {
           for (let i = 0; i < 3; i++) { if (reportInfo.logos[i]) { slide.addImage({ data: reportInfo.logos[i], x: currentX, y: curY, w: 1.5, h: lh, sizing: { type: 'contain' } }); currentX += 1.65; } }
         }
         curY += 0.65;
-        // SAFETY NET: Hindari Error toUpperCase pada teks kosong
         slide.addText((reportInfo.title || 'LAPORAN DOKUMENTASI').toUpperCase(), { x: PAGE_MARGIN_SIDE, y: curY, w: CONTENT_W, fontSize: 16, bold: true, align: 'center', color: '0F172A' });
         curY += 0.45;
         const cMeta = reportInfo.customMeta || [];
@@ -1434,19 +1370,19 @@ const App = () => {
         for (let i = 0; i < pData.length; i++) {
           const photo = pData[i]; const col = i % 2, row = Math.floor(i / 2);
           const x = PAGE_MARGIN_SIDE + (col * (BOX_W + GAP)), y = gridStartY + (row * (BOX_H + 0.15));
-          const imgW = BOX_W - 0.2, imgH = 1.97;
+          const imgW = BOX_W - 0.2, imgH = 2.1;
           if (photo && photo.src) {
             const finalImg = await bakeImageFilters(photo.src, photo.brightness, photo.saturation, photo.zoom, photo.panX, photo.panY);
             slide.addImage({ placeholder: `pic${i}`, data: finalImg, sizing: { type: 'cover', w: imgW, h: imgH } }); 
           }
-          const noteLineColor = reportType === 'progres' ? '10B981' : (isModernTemplate ? '6366F1' : '3B82F6'), noteY = y + imgH + 0.2;
-          slide.addShape(pptx.ShapeType.rect, { x: x + 0.1, y: noteY, w: 0.04, h: 0.55, fill: { color: noteLineColor } });
-          slide.addText('KETERANGAN:', { x: x + 0.2, y: noteY, w: 1.0, h: 0.15, fontSize: 6, bold: true, color: 'CBD5E1' });
+          const noteLineColor = reportType === 'progres' ? '10B981' : (isModernTemplate ? '6366F1' : '3B82F6'), noteY = y + imgH + 0.15;
+          slide.addShape(pptx.ShapeType.rect, { x: x + 0.1, y: noteY, w: 0.04, h: 0.45, fill: { color: noteLineColor } });
+          slide.addText('KETERANGAN:', { x: x + 0.2, y: noteY - 0.02, w: 1.0, h: 0.15, fontSize: 6, bold: true, color: 'CBD5E1' });
           if (reportType === 'progres' && photo?.src) {
-             slide.addShape(pptx.ShapeType.rect, { x: x + BOX_W - 0.9, y: noteY, w: 0.8, h: 0.15, fill: { color: 'F8FAFC' }, line: { color: 'E2E8F0', width: 1 }, rectRadius: 0.02 });
-             slide.addText(`PROGRES: ${photo.progress || 0}%`, { x: x + BOX_W - 0.9, y: noteY, w: 0.8, h: 0.15, fontSize: 6.5, bold: true, color: '0F172A', align: 'center' });
+             slide.addShape(pptx.ShapeType.rect, { x: x + BOX_W - 0.9, y: noteY - 0.02, w: 0.8, h: 0.15, fill: { color: 'F8FAFC' }, line: { color: 'E2E8F0', width: 1 }, rectRadius: 0.02 });
+             slide.addText(`PROGRES: ${photo.progress || 0}%`, { x: x + BOX_W - 0.9, y: noteY - 0.02, w: 0.8, h: 0.15, fontSize: 6.5, bold: true, color: '0F172A', align: 'center' });
           }
-          slide.addText(photo?.note || '-', { x: x + 0.2, y: noteY + 0.15, w: BOX_W - 0.3, h: 0.4, fontSize: 8.5, italic: true, color: '334155', valign: 'top' });
+          slide.addText(photo?.note || '-', { x: x + 0.2, y: noteY + 0.1, w: BOX_W - 0.3, h: 0.35, fontSize: 8.5, italic: true, color: '334155', valign: 'top' });
         }
       }
       await pptx.writeFile({ fileName: `${(reportInfo.title || 'Laporan').replace(/ /g, '_')}.pptx` });
@@ -1454,10 +1390,9 @@ const App = () => {
     } catch { setIsPptLoading(false); setStatusMsg({ text: 'Gagal PPTX', type: 'error' }); }
   };
 
-  // SAFETY NET: Pastikan halaman yang aktif selalu berupa Array
   const activePageData = useMemo(() => {
      const p = pages[currentPage - 1];
-     return Array.isArray(p) ? p : createNewPage()[0];
+     return Array.isArray(p) ? p : createNewPage();
   }, [pages, currentPage]);
 
   const ReportPage = ({ data, isFinal = false }) => {
@@ -1471,42 +1406,62 @@ const App = () => {
     const baseFontClass = isModern ? 'font-serif text-slate-800' : 'font-sans text-black';
     const headerTitleClass = isModern ? 'text-indigo-950 tracking-wide font-bold' : 'text-slate-900 font-black';
     let headerBorderClass = isModern ? (reportType === 'progres' ? 'border-b-4 border-emerald-700' : 'border-b-4 border-indigo-800') : (reportType === 'progres' ? 'border-b-2 border-emerald-500' : 'border-b-2 border-slate-900');
-    
-    const gridLineClass = isModern ? (reportType === 'progres' ? 'border-emerald-300' : 'border-indigo-300') : 'border-slate-800'; 
-
-    const imgContainerClass = isModern ? `rounded-xl border-2 ${reportType === 'progres' ? 'border-emerald-500' : 'border-indigo-500'}` : 'rounded-sm border border-slate-300';
     let noteBorderClass = isModern ? (reportType === 'progres' ? 'border-emerald-600' : 'border-indigo-500') : (reportType === 'progres' ? 'border-emerald-500' : 'border-slate-800');
 
     return (
-      <div className={`bg-white w-[210mm] flex flex-col ${baseFontClass} relative box-border ${isFinal ? 'report-page-final' : 'mb-10 shadow-2xl rounded-sm border border-slate-200 shrink-0'}`} style={{ height: '296.7mm', padding: '6mm 15mm 15mm 15mm', margin: '0 auto', pageBreakAfter: 'always' }}>
-        <div className={`text-center pb-3 mb-4 flex-none ${headerBorderClass}`}>
-          <div className="flex justify-start items-center gap-6 mb-3 h-12">
-            {reportInfo.logos?.map((l, i) => l && <img key={i} src={l} className="h-full w-auto object-contain object-left" alt="" />)}
-          </div>
-          <h2 className={`text-xl uppercase mb-3 leading-tight ${headerTitleClass}`}>{reportInfo.title || 'LAPORAN DOKUMENTASI'}</h2>
+      <div className={`bg-white w-[210mm] flex flex-col ${baseFontClass} relative box-border ${isFinal ? 'report-page-final' : 'mb-10 shadow-2xl rounded-xl border border-slate-200 shrink-0'}`} style={{ height: '296.7mm', padding: '10mm 15mm', margin: '0 auto', pageBreakAfter: 'always' }}>
+        <div className={`text-center pb-2 mb-3 flex-none ${headerBorderClass}`}>
           
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-left">
+          <div className="flex justify-start items-center gap-[5px] mb-2 h-[12mm]" style={{ marginTop: '-4mm' }}>
+            {reportInfo.logos?.map((l, i) => l && <img key={i} src={l} className="h-full w-auto max-w-[45mm] object-contain object-left" alt="" />)}
+          </div>
+          
+          <h2 className={`text-xl uppercase mb-2 leading-tight ${headerTitleClass}`}>{reportInfo.title || 'LAPORAN DOKUMENTASI'}</h2>
+          
+          <div className="flex flex-col gap-y-0.5 text-left">
             {meta.map((m, idx) => (
-              <div key={idx} className="flex items-start uppercase text-[7.5pt] tracking-tight">
-                <span className="w-24 shrink-0 font-bold text-slate-500">{m.l}</span>
+              <div key={idx} className="flex items-start uppercase text-[7.5pt] tracking-tight w-full">
+                <span className="w-28 shrink-0 font-bold text-slate-500">{m.l}</span>
                 <span className="mr-1.5 font-bold text-slate-500">:</span>
                 <span className="font-black flex-1 break-words leading-tight text-slate-900">{m.v || '-'}</span>
               </div>
             ))}
           </div>
         </div>
-        <div className={`grid grid-cols-2 flex-grow content-start border-t-[1.5px] border-l-[1.5px] ${gridLineClass}`}>
+
+        <div className={`grid grid-cols-2 gap-4 flex-grow content-start pt-1`}>
           {data.map((p, i) => (
-            <div key={i} className={`p-3 flex flex-col h-[74.5mm] bg-white box-border border-r-[1.5px] border-b-[1.5px] ${gridLineClass}`}>
-              <div className={`h-[48mm] bg-slate-50 relative overflow-hidden flex items-center justify-center ${imgContainerClass}`}>
-                {p?.src ? <img src={p.src} className="w-full h-full object-cover" style={{ filter: `brightness(${p?.brightness || 100}%) saturate(${p?.saturation || 100}%)`, transform: `scale(${(p?.zoom || 100) / 100})`, transformOrigin: `${p?.panX ?? 50}% ${p?.panY ?? 50}%` }} alt="" /> : <ImageIcon size={30} className="text-slate-200" />}
+            <div key={i} className={`p-2.5 flex flex-col h-[74.5mm] bg-white border border-slate-200 ${isModern ? 'rounded-2xl shadow-sm' : 'rounded-xl'}`}>
+              
+              <div className={`h-[54mm] bg-slate-50 relative overflow-hidden flex items-center justify-center border border-slate-300 ${isModern ? 'rounded-xl' : 'rounded-lg'} w-full`}>
+                {p?.src ? (
+                   isFinal || p.isBaked ? (
+                     <div 
+                         style={{ 
+                             backgroundImage: `url(${p.src})`, 
+                             backgroundSize: 'cover', 
+                             backgroundPosition: 'center', 
+                             width: '100%', 
+                             height: '100%' 
+                         }} 
+                     />
+                   ) : (
+                     <img 
+                        src={p.src} 
+                        className="w-full h-full object-cover block" 
+                        style={{ filter: `brightness(${p?.brightness || 100}%) saturate(${p?.saturation || 100}%)`, transform: `scale(${(p?.zoom || 100) / 100})`, transformOrigin: `${p?.panX ?? 50}% ${p?.panY ?? 50}%` }} 
+                        alt="" 
+                     />
+                   )
+                ) : <ImageIcon size={30} className="text-slate-200" />}
               </div>
-              <div className={`mt-2.5 border-l-[3px] pl-2.5 overflow-hidden flex-1 ${noteBorderClass}`}>
+              
+              <div className={`mt-2.5 flex-1 flex flex-col border-l-[3px] pl-2.5 ${noteBorderClass}`}>
                 <div className="flex items-center justify-between mb-0.5">
                   <div className="text-[6.5pt] font-black text-slate-400 uppercase tracking-tighter">KETERANGAN:</div>
-                  {reportType === 'progres' && p?.src && <div className="text-[7pt] font-black text-slate-900 bg-slate-100 px-1.5 py-0.5 rounded-sm border border-slate-300">PROGRES: {p.progress || 0}%</div>}
+                  {reportType === 'progres' && p?.src && <div className="text-[7pt] font-black text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">PROGRES: {p.progress || 0}%</div>}
                 </div>
-                <p className={`text-[8.5pt] leading-tight italic line-clamp-3 ${isModern ? 'text-slate-800' : 'text-slate-800 font-medium'}`}>{p?.note || '-'}</p>
+                <p className={`text-[8pt] leading-tight italic line-clamp-2 ${isModern ? 'text-slate-800' : 'text-slate-800 font-medium'}`}>{p?.note || '-'}</p>
               </div>
             </div>
           ))}
@@ -1551,7 +1506,7 @@ const App = () => {
             
             {loginError && <div className="bg-red-50 text-red-600 p-4 rounded-2xl text-xs font-bold border border-red-100 flex items-start gap-2"><AlertCircle size={16} className="shrink-0 mt-0.5" /><span>{loginError}</span></div>}
             
-            {showRulesGuide ? (
+            {showRulesGuide && (
               <div className="bg-white p-5 sm:p-6 rounded-2xl text-xs sm:text-sm text-left w-full border-2 border-red-200 shadow-xl mt-4 text-slate-800 animate-in fade-in slide-in-from-bottom-4">
                  <p className="font-black text-red-600 mb-2 text-base flex items-center gap-2"><ShieldAlert size={20}/> DATABASE ANDA TERKUNCI</p>
                  <p className="mb-4 font-medium text-slate-600 leading-relaxed">Aplikasi tidak diizinkan membaca/menulis data oleh server. Anda harus membuka gembok database secara manual di Firebase Console Anda.</p>
@@ -1579,7 +1534,9 @@ const App = () => {
                    <span>Jangan lupa klik tombol <strong className="text-blue-600">Publish</strong> berwarna biru di Firebase. Setelah itu, <strong className="text-red-500">Refresh/Muat Ulang</strong> halaman aplikasi ini.</span>
                  </p>
               </div>
-            ) : debugError && (debugError.includes('n.map') || debugError.includes('auth/operation-not-allowed')) ? (
+            )}
+            
+            {debugError && (debugError.includes('n.map') || debugError.includes('auth/operation-not-allowed')) && (
                  <div className="bg-orange-50 p-4 rounded-2xl text-xs text-left border border-orange-200 text-slate-800">
                     <p className="font-black text-red-600 mb-2 flex items-center gap-1.5"><ShieldAlert size={14}/> TINDAKAN DIPERLUKAN</p>
                     <p className="mb-2 font-medium">Sistem Cloud menolak akses. Anda harus mengaktifkan fitur <strong>Login Anonim</strong> terlebih dahulu di Firebase Anda.</p>
@@ -1590,9 +1547,11 @@ const App = () => {
                        <li>Refresh halaman ini</li>
                     </ol>
                  </div>
-            ) : debugError && !loginError ? (
+            )}
+            
+            {debugError && !loginError && !(debugError.includes('n.map') || debugError.includes('auth/operation-not-allowed')) && (
                 <div className="bg-orange-50 text-orange-600 p-4 rounded-2xl text-[10px] font-mono border border-orange-100 break-words">{debugError}</div>
-            ) : null}
+            )}
 
             <button type="submit" disabled={!isAppReady} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl sm:rounded-3xl font-black uppercase tracking-widest shadow-xl shadow-blue-500/30 active:scale-95 transition-all text-sm disabled:opacity-50">
               {isAppReady ? 'Masuk' : 'Memuat...'}
@@ -1687,173 +1646,107 @@ const App = () => {
             </div>
           </div>
 
-          {isOfflineMode ? (
-            <div className="bg-orange-50 rounded-[32px] border-2 border-dashed border-orange-200 p-8 flex flex-col items-center justify-center text-center mt-8">
-              <WifiOff size={40} className="text-orange-400 mb-4" />
-              <h3 className="text-lg font-black text-orange-700 mb-2">Terputus dari Cloud</h3>
-              {showRulesGuide ? (
-                 <div className="mt-4 w-full max-w-2xl">
-                   <div className="bg-white p-5 sm:p-6 rounded-2xl text-xs sm:text-sm text-left w-full border-2 border-red-200 shadow-xl text-slate-800">
-                     <p className="font-black text-red-600 mb-2 text-base flex items-center gap-2"><ShieldAlert size={20}/> DATABASE ANDA TERKUNCI</p>
-                     <p className="mb-4 font-medium text-slate-600 leading-relaxed">Aplikasi tidak diizinkan membaca/menulis data oleh server. Anda harus membuka gembok database secara manual di Firebase Console Anda.</p>
-                     <ol className="list-decimal pl-5 space-y-2.5 font-bold text-slate-700 mb-5">
-                        <li>Buka <a href="https://console.firebase.google.com/" target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">Console Firebase</a> di tab baru.</li>
-                        <li>Pilih proyek Anda, lalu klik menu <strong>Firestore Database</strong> di sebelah kiri.</li>
-                        <li>Pilih tab <strong>Rules</strong> (Aturan).</li>
-                        <li>Hapus semua teks yang ada di sana, dan ganti dengan kode di bawah ini:</li>
-                     </ol>
-                     <div className="bg-slate-900 p-4 rounded-xl relative shadow-inner">
-                        <button type="button" onClick={copyRulesToClipboard} className="absolute top-3 right-3 bg-white/20 text-white px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-white/30 transition-all active:scale-95">COPY KODE</button>
-                        <pre className="text-xs text-emerald-400 font-mono overflow-x-auto leading-relaxed">
-            {`rules_version = '2';
-            service cloud.firestore {
-              match /databases/{database}/documents {
-                match /{document=**} {
-                  allow read, write: if true;
-                }
-              }
-            }`}
-                        </pre>
-                     </div>
-                     <p className="mt-4 font-bold text-slate-600 bg-blue-50 p-3 rounded-xl border border-blue-100 flex items-start gap-2">
-                       <span className="text-blue-600 text-lg leading-none mt-0.5">5.</span> 
-                       <span>Jangan lupa klik tombol <strong className="text-blue-600">Publish</strong> berwarna biru di Firebase. Setelah itu, <strong className="text-red-500">Refresh/Muat Ulang</strong> halaman aplikasi ini.</span>
-                     </p>
-                  </div>
-                 </div>
-              ) : debugError && (debugError.includes('n.map') || debugError.includes('auth/operation-not-allowed')) ? (
-                 <div className="bg-white p-5 rounded-2xl text-xs sm:text-sm text-left w-full max-w-2xl border border-orange-200 text-slate-700 shadow-sm mt-2">
-                    <p className="font-black text-red-600 mb-3 text-sm flex items-center gap-2"><ShieldAlert size={18}/> TINDAKAN DIPERLUKAN DI FIREBASE ANDA:</p>
-                    <p className="mb-3 font-medium">Sistem database Anda saat ini menolak akses masuk ke Cloud karena fitur <strong>Login Anonim</strong> belum diaktifkan.</p>
-                    <ol className="list-decimal pl-5 space-y-2 font-bold text-slate-600">
-                       <li>Buka <a href="https://console.firebase.google.com/" target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">Console Firebase</a> Anda.</li>
-                       <li>Pilih menu <strong>Authentication</strong> (di panel kiri).</li>
-                       <li>Klik tab <strong>Sign-in method</strong>.</li>
-                       <li>Pilih provider <strong>Anonymous</strong> (Anonim) lalu aktifkan (Enable) dan klik tombol Save.</li>
-                       <li>Refresh (Muat ulang) halaman aplikasi ini.</li>
-                    </ol>
-                 </div>
-              ) : (
-                 <>
-                   <p className="text-orange-600 max-w-lg text-xs sm:text-sm mb-4">Aplikasi tidak dapat terhubung normal ke database. Anda tetap bisa bekerja dan menyimpan hasil via <strong>MENTAHAN (.json)</strong>.</p>
-                   {debugError && <div className="bg-white p-3 rounded-xl text-[10px] font-mono text-left w-full max-w-lg border border-orange-200 text-red-600 font-bold overflow-auto shadow-inner mt-2">Error Log: {debugError}</div>}
-                 </>
-              )}
-            </div>
-          ) : !user ? (
-            <div className="bg-slate-100 rounded-[32px] border-2 border-dashed border-slate-300 p-10 flex flex-col items-center justify-center text-center mt-8">
-              <Loader2 size={40} className="text-blue-400 mb-4 animate-spin" /><h3 className="text-lg font-black text-slate-600 mb-2">Menyambungkan ke Cloud...</h3>
-            </div>
-          ) : (
-            <>
-              {isAdmin && (
-                <div className="mb-10 space-y-6 animate-in fade-in slide-in-from-bottom-4">
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 flex items-center gap-4 sm:gap-5">
-                       <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0"><FileStack size={24} className="sm:w-[28px] sm:h-[28px]"/></div>
-                       <div className="overflow-hidden">
-                         <p className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1 truncate">Total Laporan</p>
-                         <h3 className="text-xl sm:text-3xl font-black text-slate-800">{filteredProjects.length}</h3>
-                       </div>
-                    </div>
-                    
-                    <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 flex items-center gap-4 sm:gap-5">
-                       <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0"><Layers size={24} className="sm:w-[28px] sm:h-[28px]"/></div>
-                       <div className="overflow-hidden">
-                         <p className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1 truncate">Total Halaman</p>
-                         <h3 className="text-xl sm:text-3xl font-black text-slate-800">{dashboardStats.totalPages}</h3>
-                       </div>
-                    </div>
-
-                    <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 flex items-center gap-4 sm:gap-5">
-                       <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0"><Users size={24} className="sm:w-[28px] sm:h-[28px]"/></div>
-                       <div className="overflow-hidden">
-                         <p className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1 truncate">Kontributor</p>
-                         <h3 className="text-xl sm:text-3xl font-black text-slate-800">{uniqueAuthors.length}</h3>
-                       </div>
-                    </div>
-                    
-                    <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 flex items-center gap-4 sm:gap-5">
-                       <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-orange-50 text-orange-600 flex items-center justify-center shrink-0"><Activity size={24} className="sm:w-[28px] sm:h-[28px]"/></div>
-                       <div className="overflow-hidden w-full">
-                         <p className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1 truncate">Aktivitas Terbaru</p>
-                         <h3 className="text-sm sm:text-base font-bold text-slate-800 leading-tight">
-                           {filteredProjects.length > 0 && filteredProjects[0] ? new Date(filteredProjects[0].updatedAt).toLocaleString('id-ID', {day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'}) : '-'}
-                         </h3>
-                         {filteredProjects.length > 0 && filteredProjects[0]?.authorEmail && (
-                             <p className="text-[9px] sm:text-[10px] text-slate-500 font-medium truncate mt-1">Oleh: <span className="text-blue-600">{filteredProjects[0].authorEmail}</span></p>
-                         )}
-                       </div>
-                    </div>
-                  </div>
+          {isAdmin && (
+            <div className="mb-10 space-y-6 animate-in fade-in slide-in-from-bottom-4">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 flex items-center gap-4 sm:gap-5">
+                   <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0"><FileStack size={24} className="sm:w-[28px] sm:h-[28px]"/></div>
+                   <div className="overflow-hidden">
+                     <p className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1 truncate">Total Laporan</p>
+                     <h3 className="text-xl sm:text-3xl font-black text-slate-800">{filteredProjects.length}</h3>
+                   </div>
                 </div>
-              )}
+                
+                <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 flex items-center gap-4 sm:gap-5">
+                   <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0"><Layers size={24} className="sm:w-[28px] sm:h-[28px]"/></div>
+                   <div className="overflow-hidden">
+                     <p className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1 truncate">Total Halaman</p>
+                     <h3 className="text-xl sm:text-3xl font-black text-slate-800">{dashboardStats.totalPages}</h3>
+                   </div>
+                </div>
 
-              <div className="flex items-center justify-between mb-4 border-t border-slate-200 pt-8">
-                <h3 className="text-xl font-black text-slate-800 flex items-center gap-2"><ClipboardList className="text-blue-500"/> Daftar Laporan Tersimpan</h3>
+                <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 flex items-center gap-4 sm:gap-5">
+                   <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0"><Users size={24} className="sm:w-[28px] sm:h-[28px]"/></div>
+                   <div className="overflow-hidden">
+                     <p className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1 truncate">Kontributor</p>
+                     <h3 className="text-xl sm:text-3xl font-black text-slate-800">{uniqueAuthors.length}</h3>
+                   </div>
+                </div>
+                
+                <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 flex items-center gap-4 sm:gap-5">
+                   <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-orange-50 text-orange-600 flex items-center justify-center shrink-0"><Activity size={24} className="sm:w-[28px] sm:h-[28px]"/></div>
+                   <div className="overflow-hidden w-full">
+                     <p className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1 truncate">Aktivitas Terbaru</p>
+                     <h3 className="text-sm sm:text-base font-bold text-slate-800 leading-tight">
+                       {filteredProjects.length > 0 && filteredProjects[0] ? new Date(filteredProjects[0].updatedAt).toLocaleString('id-ID', {day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'}) : '-'}
+                     </h3>
+                     {filteredProjects.length > 0 && filteredProjects[0]?.authorEmail && (
+                         <p className="text-[9px] sm:text-[10px] text-slate-500 font-medium truncate mt-1">Oleh: <span className="text-blue-600">{filteredProjects[0].authorEmail}</span></p>
+                     )}
+                   </div>
+                </div>
               </div>
-
-              {filteredProjects.length === 0 ? (
-                <div className="bg-white rounded-[32px] border-2 border-dashed border-slate-300 p-10 flex flex-col items-center justify-center text-center">
-                  <ClipboardList size={48} className="text-slate-300 mb-4" />
-                  <h3 className="text-lg font-black text-slate-600 mb-2">Belum Ada Laporan</h3>
-                  <p className="text-slate-400 text-xs sm:text-sm">
-                    {filterEmail !== 'all' ? 'User ini belum memiliki laporan.' : 'Klik buat laporan baru untuk memulai.'}
-                  </p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-                  {filteredProjects.map(p => {
-                    const authorE = p.authorEmail || 'Anonim';
-                    const authorBgColor = getAvatarColor(authorE); 
-                    const authorTextColor = authorBgColor.replace('bg-', 'text-');
-                    const initials = getInitials(authorE);
-                    
-                    return (
-                        // DESAIN KARTU BARU: SIMPEL, BERSIH, WARNA HANYA PADA NAMA DAN AVATAR
-                        <div key={p.id} className="bg-white rounded-[24px] shadow-sm border border-slate-200 hover:shadow-xl hover:-translate-y-1 transition-all flex flex-col p-5 group relative">
-                          <div className="flex justify-between items-start mb-4 mt-1">
-                             <div className="flex items-center gap-3">
-                                {/* AVATAR BERWARNA */}
-                                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-black shadow-md ${authorBgColor}`}>
-                                   {initials}
-                                </div>
-                                <div className="overflow-hidden">
-                                   <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest leading-tight">Kontributor</p>
-                                   {/* TEKS NAMA BERWARNA */}
-                                   <p className={`text-xs font-bold truncate max-w-[120px] sm:max-w-[150px] ${authorTextColor}`}>{authorE}</p>
-                                </div>
-                             </div>
-                             <button onClick={(e) => { e.stopPropagation(); setShowDeleteProjectModal({show: true, project: p}); }} className="p-1.5 bg-slate-50 text-slate-400 hover:bg-red-50 hover:text-red-500 rounded-lg transition-all shadow-sm"><Trash2 size={14}/></button>
-                          </div>
-
-                          <h3 className="text-base font-black text-slate-800 mb-3 line-clamp-2">{p.reportInfo?.title || 'Laporan'}</h3>
-                          
-                          <div className="space-y-2 mb-4 flex-grow text-[10px] text-slate-500 font-medium bg-slate-50 p-3 rounded-xl border border-slate-100">
-                            <div className="flex items-center gap-2 truncate"><Briefcase size={12} className="text-slate-400 shrink-0" /> <span className="font-bold text-slate-700 truncate">{p.reportInfo?.customMeta?.[0]?.value || p.reportInfo?.project || '-'}</span></div>
-                            <div className="flex items-center gap-2"><Calendar size={12} className="text-slate-400 shrink-0"/> {new Date(p.updatedAt || Date.now()).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
-                            <div className="flex items-center justify-between"><div className="flex items-center gap-2"><FileText size={12} className="text-slate-400 shrink-0"/> {p.lastActiveTab === 'progres' ? (p.pageCountProgres || 1) : (p.pageCountUmum || p.pageCount || 1)} Halaman</div> <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-white border border-slate-200 text-slate-500 shadow-sm">{p.lastActiveTab}</span></div>
-                          </div>
-                          
-                          {/* TOMBOL STANDAR ABU-ABU -> BIRU SAAT DISENTUH */}
-                          <button onClick={() => openProject(p)} className="w-full text-slate-600 bg-slate-100 hover:bg-blue-600 hover:text-white py-3 rounded-xl font-black text-[10px] uppercase transition-all flex justify-center items-center gap-2 shadow-sm hover:shadow-md">Buka Laporan <ChevronRight size={14} /></button>
-                        </div>
-                    );
-                  })}
-                </div>
-              )}
-            </>
+            </div>
           )}
+
+          <div className="flex items-center justify-between mb-4 border-t border-slate-200 pt-8">
+            <h3 className="text-xl font-black text-slate-800 flex items-center gap-2"><ClipboardList className="text-blue-500"/> Daftar Laporan Tersimpan</h3>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {projects.length === 0 ? (
+               <div className="col-span-full bg-white p-10 rounded-2xl border border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400">
+                 <ClipboardList size={40} className="mb-3 opacity-50" />
+                 <p className="font-bold uppercase tracking-widest text-xs">Belum Ada Laporan</p>
+               </div>
+            ) : projects.map(p => {
+               const isProjectAdmin = DEFAULT_ADMIN.includes(activeEmail.toLowerCase());
+               const authorColor = getAvatarColor(p.authorEmail);
+               const authorTextColor = authorColor.replace('bg-', 'text-');
+               const initials = getInitials(p.authorEmail);
+
+               return (
+                  <div key={p.id} className="bg-white rounded-[24px] p-5 shadow-xl border border-slate-200 hover:border-blue-400 transition-all flex flex-col hover:-translate-y-1 relative">
+                    <div className="flex justify-between items-start mb-3">
+                       <div className="flex items-center gap-3">
+                          <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-black shadow-md ${authorColor}`}>
+                             {initials}
+                          </div>
+                          <div className="overflow-hidden">
+                             <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest leading-tight">Kontributor</p>
+                             <p className={`text-xs font-bold truncate max-w-[120px] sm:max-w-[150px] ${authorTextColor}`}>{p.authorEmail || 'Anonim'}</p>
+                          </div>
+                       </div>
+                       {(isProjectAdmin || p.authorEmail === activeEmail) && (
+                         <button onClick={(e) => { e.stopPropagation(); setShowDeleteProjectModal({show: true, project: p}); }} className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg transition-all"><Trash2 size={16}/></button>
+                       )}
+                    </div>
+
+                    <h3 className="text-base font-black text-slate-800 mb-3 line-clamp-2">{p.reportInfo?.title || 'Laporan'}</h3>
+                    
+                    <div className="space-y-1.5 mb-4 flex-grow text-[10px] text-slate-500 font-medium">
+                      <div className="flex items-center gap-2 truncate"><Briefcase size={12} /> {p.reportInfo?.customMeta?.[0]?.value || p.reportInfo?.project || '-'}</div>
+                      <div className="flex items-center gap-2"><FileText size={12} /> {p.lastActiveTab === 'progres' ? (p.pageCountProgres || 1) : (p.pageCountUmum || p.pageCount || 1)} Halaman <span className="ml-auto px-1.5 py-0.5 rounded text-[8px] font-black uppercase border border-slate-200">{p.lastActiveTab}</span></div>
+                      <div className="flex items-center gap-2"><Calendar size={12} /> {new Date(p.updatedAt || Date.now()).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+                    </div>
+                    
+                    <button onClick={() => openProject(p)} className="w-full bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 py-2.5 rounded-xl font-black text-[10px] uppercase transition-all flex justify-center items-center gap-2">
+                      Buka Laporan <ChevronRight size={14}/>
+                    </button>
+                  </div>
+               );
+            })}
+          </div>
         </main>
       )}
 
       {view === 'edit' && (
-        <main className="max-w-6xl mx-auto p-4 sm:p-8 animate-in fade-in duration-700">
+        <main className="max-w-6xl mx-auto p-4 sm:p-10 animate-in fade-in duration-500">
           <div className="flex bg-white p-1.5 rounded-[24px] mb-6 shadow-xl max-w-md mx-auto border border-slate-200">
              <button onClick={() => switchTab('umum')} className={`flex-1 flex justify-center items-center gap-2 py-2.5 rounded-2xl text-[9px] font-black uppercase transition-all ${reportType === 'umum' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400'}`}><ClipboardList size={14}/> Umum</button>
              <button onClick={() => switchTab('progres')} className={`flex-1 flex justify-center items-center gap-2 py-2.5 rounded-2xl text-[9px] font-black uppercase transition-all ${reportType === 'progres' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400'}`}><Target size={14}/> Progres</button>
           </div>
-          
+
           <section className="bg-white rounded-[32px] p-5 sm:p-8 shadow-2xl mb-8 border border-slate-200/60">
             <div className="mb-6">
               <label className="text-[9px] font-black text-slate-400 tracking-widest ml-2 block mb-2 uppercase">Logo Header (Berbaris Rata Kiri)</label>
@@ -1909,7 +1802,7 @@ const App = () => {
 
               <div className="md:col-span-2 mt-4 pt-4 border-t border-slate-100">
                 <label className="text-[9px] font-black text-blue-500 ml-2 flex items-center gap-1.5 mb-2"><Palette size={14} /> TEMA TAMPILAN PDF</label>
-                <div className="flex gap-2 bg-slate-50 p-2 rounded-2xl shadow-inner border border-slate-200 overflow-x-auto">
+                <div className="flex gap-2 bg-slate-50 p-2 rounded-2xl shadow-inner border border-slate-200 overflow-x-auto max-w-sm">
                    {['klasik', 'modern'].map(t => (
                      <button key={t} onClick={() => setReportInfo({...reportInfo, template: t})} className={`min-w-[90px] flex-1 py-3 rounded-xl text-[10px] font-black capitalize transition-all ${reportInfo.template === t ? 'bg-white shadow-md text-blue-600 border border-blue-200' : 'text-slate-400'}`}>{t}</button>
                    ))}
@@ -1917,31 +1810,57 @@ const App = () => {
               </div>
             </div>
 
-            <div className="flex flex-col lg:flex-row items-center gap-4 bg-slate-900 rounded-[24px] p-4 text-white mt-8 shadow-xl border border-white/5 w-full">
-               <div className="flex items-center justify-between w-full lg:w-max shrink-0">
-                 <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} className="p-2.5 bg-white/10 rounded-xl"><ChevronLeft size={20}/></button>
-                 <span className="font-black text-lg mx-4 whitespace-nowrap">{currentPage} / {pages.length}</span>
-                 <button onClick={() => setCurrentPage(p => Math.min(pages.length, p + 1))} className="p-2.5 bg-white/10 rounded-xl"><ChevronRight size={20}/></button>
+            <div className="flex flex-col lg:flex-row items-center justify-between mt-10 bg-slate-900 p-4 rounded-[40px] text-white shadow-2xl gap-6">
+               <div className="flex items-center gap-6">
+                 <button onClick={() => setCurrentPage(c => Math.max(1, c-1))} className="p-2.5 bg-white/10 rounded-xl hover:bg-white/20 transition-all"><ChevronLeft size={20}/></button>
+                 <span className="font-black text-lg w-20 text-center">{currentPage} / {pages.length}</span>
+                 <button onClick={() => setCurrentPage(c => Math.min(pages.length, c+1))} className="p-2.5 bg-white/10 rounded-xl hover:bg-white/20 transition-all"><ChevronRight size={20}/></button>
                </div>
-               <div className="flex gap-2 w-full lg:justify-end lg:ml-auto flex-wrap">
+               <div className="flex flex-wrap gap-3 justify-center lg:justify-end flex-grow">
                  {pages.length > 1 && <button onClick={() => setShowDeletePageModal(true)} className="flex-1 sm:flex-none bg-red-600 text-white px-3 py-3 rounded-xl text-[9px] font-black uppercase">HAPUS HAL</button>}
                  <button onClick={executeDeleteAllPhotos} className="flex-1 sm:flex-none bg-orange-500 text-white px-3 py-3 rounded-xl text-[9px] font-black uppercase">KOSONGKAN</button>
-                 <label className="flex-1 sm:flex-none bg-white text-slate-900 px-3 py-3 rounded-xl text-[9px] font-black uppercase cursor-pointer flex items-center justify-center gap-1.5"><Upload size={14}/> MEGA UPLOAD<input type="file" multiple accept="image/*" className="hidden" onChange={handleMegaUpload} /></label>
-                 <button onClick={handleAddPage} className={`w-full sm:w-auto flex-1 text-white px-4 py-3 rounded-xl text-[9px] font-black uppercase ${reportType === 'progres' ? 'bg-emerald-600' : 'bg-blue-600'}`}>+ HALAMAN BARU</button>
+                 <button onClick={() => setPagesData(prev => {
+                   const n = {...prev}; 
+                   n[reportType] = [...(n[reportType] || []), createNewPage()[0]]; 
+                   return n;
+                 })} className="bg-blue-600 px-8 py-4 rounded-2xl text-[10px] font-black uppercase shadow-xl hover:bg-blue-500 transition-all">+ Halaman</button>
+                 <label className="bg-white text-slate-900 px-8 py-4 rounded-2xl text-[10px] font-black uppercase cursor-pointer shadow-xl flex items-center gap-2 hover:bg-slate-100 transition-all">
+                   <Upload size={14}/> Mega Upload
+                   <input type="file" multiple accept="image/*" className="hidden" onChange={handleMegaUpload} />
+                 </label>
                </div>
             </div>
           </section>
 
-          <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+          <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
             {activePageData.map((p, i) => (
-              <PhotoCard key={`${currentPage}-${i}`} pIdx={currentPage-1} sIdx={i} p={p} reportType={reportType} updatePhoto={(k, v) => updateSpecificPhoto(currentPage-1, i, k, v)} clearPhoto={() => clearSpecificPhoto(currentPage-1, i)} handleFileUpload={(e) => handleFileUpload(currentPage-1, i, e)} />
+              <PhotoCard 
+                key={`${currentPage}-${i}`} 
+                p={p} 
+                reportType={reportType} 
+                updatePhoto={(k, v) => setPagesData(prev => {
+                  const n = {...prev};
+                  const updatedPage = [...n[reportType][currentPage-1]];
+                  updatedPage[i] = { ...updatedPage[i], [k]: v };
+                  n[reportType][currentPage-1] = updatedPage;
+                  return n;
+                })}
+                clearPhoto={() => setPagesData(prev => {
+                  const n = {...prev};
+                  const updatedPage = [...n[reportType][currentPage-1]];
+                  updatedPage[i] = createNewPage()[0];
+                  n[reportType][currentPage-1] = updatedPage;
+                  return n;
+                })}
+                handleFileUpload={(e) => handleFileUpload(currentPage-1, i, e)}
+              />
             ))}
           </section>
         </main>
       )}
 
       {view === 'preview' && (
-        <main className="w-full flex flex-col items-center bg-slate-200/50 min-h-screen relative overflow-x-hidden">
+        <main className="w-full bg-slate-200 min-h-screen py-10 flex flex-col items-center overflow-x-auto relative">
           <div className="sticky top-2 z-40 bg-slate-900/80 backdrop-blur-xl px-5 py-3 rounded-full flex items-center gap-5 shadow-2xl text-white mt-4 mb-4 border border-white/20 transition-all">
             <button onClick={() => setPreviewZoom(z => Math.max(0.3, z - 0.1))} className="p-1 hover:bg-white/10 rounded-full"><ZoomOut size={18}/></button>
             <span className="text-[10px] font-black w-10 text-center">{Math.round(previewZoom * 100)}%</span>
@@ -1949,19 +1868,19 @@ const App = () => {
             <div className="w-px h-4 bg-white/30"></div>
             <button onClick={() => setPreviewZoom(window.innerWidth < 850 ? Math.max(0.3, (window.innerWidth - 32) / 794) : 1)} className="p-1 text-[10px] font-black flex items-center gap-1.5"><Maximize size={14}/> FIT</button>
           </div>
-          <div className="flex flex-col items-center gap-10 py-8 transition-transform duration-300 origin-top" style={{ transform: `scale(${previewZoom})`, width: '210mm', marginBottom: `${(previewZoom - 1) * pages.length * 1122}px` }}>
+          <div className="flex flex-col items-center gap-10 py-8 transition-transform duration-300 origin-top shadow-2xl" style={{ transform: `scale(${previewZoom})`, width: '210mm', marginBottom: `${(previewZoom - 1) * pages.length * 1122}px` }}>
             {pages.length > 0 ? pages.map((p, i) => <ReportPage key={`preview-${i}`} data={p} />) : (
-              <div className="bg-white w-[210mm] h-[296.7mm] flex flex-col items-center justify-center rounded-sm shadow-xl border border-dashed border-slate-300 text-slate-400">
+              <div className="bg-white w-[210mm] h-[296.7mm] flex flex-col items-center justify-center rounded-sm border border-dashed border-slate-300 text-slate-400">
                 <FileText size={64} className="mb-4 opacity-20" />
-                <p className="font-black uppercase tracking-widest text-sm">Halaman Masih Kosong</p>
+                <p className="font-bold uppercase tracking-widest text-sm">Halaman Masih Kosong</p>
               </div>
             )}
           </div>
         </main>
       )}
 
-      {/* RENDER AREA TERSEMBUNYI UNTUK CETAK PDF */}
-      <div style={{ height: 0, overflow: 'hidden', position: 'absolute', top: 0, left: 0, pointerEvents: 'none', zIndex: -1 }}>
+      {/* RENDER AREA PDF (Off-Screen untuk menghindari PDF kosong) */}
+      <div style={{ position: 'absolute', top: 0, left: '-9999px', opacity: 0.001, pointerEvents: 'none', zIndex: -1000 }}>
          <div id="pdf-render-area" style={{ width: '210mm', backgroundColor: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
            {(bakedPages || pages).map((p, i) => <ReportPage key={`render-${i}`} data={p} isFinal={true} />)}
          </div>
@@ -1971,7 +1890,7 @@ const App = () => {
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
           <div className="bg-white rounded-[24px] p-6 sm:p-8 max-w-md w-full shadow-2xl animate-in zoom-in-95 border-2 border-orange-100">
             <div className="flex items-center gap-3 text-orange-500 mb-4"><div className="bg-orange-100 p-2 rounded-full"><HardDrive size={24} /></div><h3 className="text-lg font-black uppercase tracking-widest">Pengingat Backup</h3></div>
-            <p className="text-slate-600 font-medium mb-6 text-xs sm:text-sm leading-relaxed">Disarankan mengunduh <strong>File Mentahan (.json)</strong> sebelum {pendingAction === 'logout' ? 'keluar' : 'kembali'}. File ini bisa dibuka kapan pun.</p>
+            <p className="text-slate-600 font-medium mb-6 text-xs sm:text-sm leading-relaxed">Disarankan mengunduh <strong>File Mentahan (.json)</strong> sebelum {pendingAction === 'logout' ? 'keluar' : 'kembali'}. File ini bisa dibuka kapan pun jika terjadi masalah jaringan.</p>
             <div className="flex flex-col gap-2.5">
               <button onClick={saveMentahanAndProceed} className="w-full py-3.5 font-black bg-blue-600 text-white rounded-xl uppercase text-[10px] shadow-lg flex justify-center items-center gap-2"><HardDrive size={16} /> Simpan Mentahan & Lanjut</button>
               <div className="flex gap-2.5">
@@ -1985,12 +1904,12 @@ const App = () => {
 
       {showDeleteProjectModal.show && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-[24px] p-6 max-w-sm w-full shadow-2xl animate-in zoom-in-95">
-            <div className="flex items-center gap-3 text-red-600 mb-4"><ShieldAlert size={28}/><h3 className="text-lg font-black uppercase tracking-widest">Hapus Proyek</h3></div>
+          <div className="bg-white rounded-[24px] p-6 sm:p-8 max-w-sm w-full shadow-2xl animate-in zoom-in-95">
+            <div className="flex items-center gap-3 text-red-600 mb-4"><ShieldAlert size={28}/><h3 className="text-lg font-black uppercase tracking-tight">Hapus Proyek</h3></div>
             <p className="text-slate-600 mb-6 text-xs sm:text-sm">Hapus laporan dari Cloud?</p>
             <div className="flex gap-3">
               <button onClick={() => setShowDeleteProjectModal({show: false, project: null})} className="flex-1 py-3 font-black bg-slate-100 rounded-xl uppercase text-[10px] text-slate-500">Batal</button>
-              <button onClick={executeDeleteProject} className="flex-1 py-3 font-black bg-red-600 text-white rounded-xl uppercase text-[10px]">Hapus Total</button>
+              <button onClick={executeDeleteProject} className="flex-1 py-3 font-black bg-red-600 text-white rounded-xl uppercase text-[10px] shadow-sm">Hapus Total</button>
             </div>
           </div>
         </div>
@@ -1998,12 +1917,12 @@ const App = () => {
 
       {showDeletePageModal && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-[24px] p-6 max-w-sm w-full shadow-2xl animate-in zoom-in-95">
-            <div className="flex items-center gap-3 text-red-600 mb-4"><Trash2 size={28}/><h3 className="text-lg font-black uppercase tracking-widest">Hapus Halaman</h3></div>
+          <div className="bg-white rounded-[24px] p-6 sm:p-8 max-w-sm w-full shadow-2xl animate-in zoom-in-95">
+            <div className="flex items-center gap-3 text-red-600 mb-4"><Trash2 size={28}/><h3 className="text-lg font-black uppercase tracking-tight">Hapus Halaman</h3></div>
             <p className="text-slate-600 mb-6 text-xs sm:text-sm">Hapus <strong>Halaman {currentPage}</strong>?</p>
             <div className="flex gap-3">
               <button onClick={() => setShowDeletePageModal(false)} className="flex-1 py-3 font-black bg-slate-100 rounded-xl uppercase text-[10px] text-slate-500">Batal</button>
-              <button onClick={executeDeletePage} className="flex-1 py-3 font-black bg-red-600 text-white rounded-xl uppercase text-[10px]">Hapus</button>
+              <button onClick={executeDeletePage} className="flex-1 py-3 font-black bg-red-600 text-white rounded-xl uppercase text-[10px] shadow-sm">Hapus Halaman</button>
             </div>
           </div>
         </div>
@@ -2011,7 +1930,7 @@ const App = () => {
 
       {showAccessModal && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-[24px] p-6 max-w-lg w-full shadow-2xl animate-in zoom-in-95 flex flex-col max-h-[90vh]">
+          <div className="bg-white rounded-[24px] p-6 sm:p-8 max-w-lg w-full shadow-2xl animate-in zoom-in-95 flex flex-col max-h-[90vh]">
             <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3"><div className="flex items-center gap-2 text-slate-800"><ShieldAlert size={24} className="text-blue-600" /><h3 className="text-lg font-black uppercase tracking-widest">Kelola Akses</h3></div></div>
             <div className="mb-4 bg-slate-50 p-3 rounded-2xl border border-slate-200">
               <label className="block text-[9px] font-black text-slate-500 uppercase mb-1.5 ml-1">Tambah Email Baru</label>
