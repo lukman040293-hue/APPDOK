@@ -21,7 +21,6 @@ import { getFirestore, doc, setDoc, getDoc, collection, deleteDoc, onSnapshot, w
 let app, auth, db, appId;
 try {
   // MENGGUNAKAN FIREBASE ANDA SEPENUHNYA
-  // Kita abaikan database bawaan Canvas agar terbebas dari error path URL
   const firebaseConfig = {
       apiKey: "AIzaSyCvMuSGrojku0-UM4tWaNTK2EDlgqjWAlM",
       authDomain: "apdok-f9052.firebaseapp.com",
@@ -34,8 +33,8 @@ try {
   auth = getAuth(app);
   db = getFirestore(app);
   
-  // ID statis yang rapi agar URL database tidak pernah terpecah
-  appId = 'apdok_production';
+  // MENGEMBALIKAN KE FOLDER LAMA AGAR DATA TIDAK HILANG
+  appId = 'default-app-id';
   
 } catch (e) {
   console.error("Gagal inisialisasi Firebase", e);
