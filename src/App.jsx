@@ -93,6 +93,9 @@ const getInitials = (email) => {
 const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleFileUpload }) => {
   const [tab, setTab] = useState('filter');
   const { zoom = 100, panX = 50, panY = 50, brightness = 100, saturation = 100, progress = 0 } = p || {};
+  
+  const camId = `cam-${pIdx}-${sIdx}`;
+  const galId = `gal-${pIdx}-${sIdx}`;
 
   return (
     <div className="bg-white rounded-[32px] sm:rounded-[48px] shadow-xl overflow-hidden flex flex-col group border-2 border-transparent hover:border-blue-500 transition-all duration-500 hover:shadow-2xl">
@@ -105,20 +108,26 @@ const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleF
               style={p.isBaked ? {} : { filter: `brightness(${brightness}%) saturate(${saturation}%)`, transform: `scale(${zoom / 100})`, transformOrigin: `${panX}% ${panY}%` }} 
               alt="" 
             />
-            <button onClick={clearPhoto} className="absolute top-3 right-3 sm:top-4 sm:right-4 bg-red-500 text-white p-2 sm:p-2.5 rounded-xl sm:rounded-2xl shadow-xl hover:bg-red-600 transition-all active:scale-90 z-10">
-              <Trash2 size={18} className="sm:w-5 sm:h-5"/>
+            <button 
+              type="button"
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); clearPhoto(); }}
+              onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); clearPhoto(); }}
+              className="absolute top-3 right-3 sm:top-4 sm:right-4 bg-red-500 text-white p-3 sm:p-2.5 rounded-xl sm:rounded-2xl shadow-xl hover:bg-red-600 transition-all active:scale-90 z-50 cursor-pointer"
+            >
+              <Trash2 size={18} className="sm:w-5 sm:h-5 pointer-events-none"/>
             </button>
           </>
         ) : (
-          <div className="flex flex-col gap-3 w-full px-6 sm:px-10 text-center">
-            <label className={`w-full text-white py-3 sm:py-4 rounded-2xl sm:rounded-3xl text-[10px] font-black uppercase cursor-pointer flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all ${reportType === 'progres' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-blue-600 hover:bg-blue-500'}`}>
-              <Camera size={18} className="sm:w-5 sm:h-5"/> AMBIL KAMERA
-              <input type="file" accept="image/jpeg, image/png, image/webp" capture="environment" className="hidden" onChange={handleFileUpload} />
+          <div className="flex flex-col gap-3 w-full px-6 sm:px-10 text-center relative z-20">
+            <label htmlFor={camId} className={`w-full text-white py-3 sm:py-4 rounded-2xl sm:rounded-3xl text-[10px] font-black uppercase cursor-pointer flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all ${reportType === 'progres' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-blue-600 hover:bg-blue-500'}`}>
+              <Camera size={18} className="sm:w-5 sm:h-5 pointer-events-none"/> AMBIL KAMERA
             </label>
-            <label className="w-full cursor-pointer bg-slate-100 text-slate-500 py-3 sm:py-3.5 rounded-2xl sm:rounded-3xl text-[10px] font-black uppercase flex items-center justify-center gap-2 active:scale-95 hover:bg-slate-200 transition-all">
-              <ImageIcon size={16} className="sm:w-4 sm:h-4"/> PILIH GALERI
-              <input type="file" accept="image/jpeg, image/png, image/webp" className="hidden" onChange={handleFileUpload} />
+            <input id={camId} type="file" accept="image/jpeg, image/png, image/webp" capture="environment" className="hidden" onChange={handleFileUpload} />
+            
+            <label htmlFor={galId} className="w-full cursor-pointer bg-slate-100 text-slate-500 py-3 sm:py-3.5 rounded-2xl sm:rounded-3xl text-[10px] font-black uppercase flex items-center justify-center gap-2 active:scale-95 hover:bg-slate-200 transition-all">
+              <ImageIcon size={16} className="sm:w-4 sm:h-4 pointer-events-none"/> PILIH GALERI
             </label>
+            <input id={galId} type="file" accept="image/jpeg, image/png, image/webp" className="hidden" onChange={handleFileUpload} />
           </div>
         )}
         
@@ -1644,7 +1653,10 @@ const App = () => {
             </div>
             <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
               {isAdmin && <button onClick={() => setShowAccessModal(true)} className="w-full sm:w-auto bg-slate-800 text-white px-4 sm:px-6 py-3.5 rounded-2xl font-black uppercase text-[10px] sm:text-xs flex items-center justify-center gap-2 shadow-lg transition-all active:scale-95"><User size={16}/> AKSES</button>}
-              <label className="w-full sm:w-auto bg-white text-blue-600 border-2 border-blue-600 px-4 sm:px-6 py-3.5 rounded-2xl font-black uppercase text-[10px] sm:text-xs flex items-center justify-center gap-2 shadow-lg cursor-pointer transition-all active:scale-95"><UploadCloud size={16}/> BUKA MENTAHAN<input type="file" accept=".json" onChange={loadMentahan} className="hidden" /></label>
+              <label htmlFor="upload-mentahan" className="w-full sm:w-auto bg-white text-blue-600 border-2 border-blue-600 px-4 sm:px-6 py-3.5 rounded-2xl font-black uppercase text-[10px] sm:text-xs flex items-center justify-center gap-2 shadow-lg cursor-pointer transition-all active:scale-95">
+                <UploadCloud size={16} className="pointer-events-none"/> BUKA MENTAHAN
+              </label>
+              <input id="upload-mentahan" type="file" accept=".json" onChange={loadMentahan} className="hidden" />
               <button onClick={createNewProject} className="w-full sm:w-auto bg-blue-600 text-white px-4 sm:px-8 py-3.5 rounded-2xl font-black uppercase text-[10px] sm:text-xs flex items-center justify-center gap-2 shadow-xl shadow-blue-500/30 transition-all active:scale-95"><Plus size={16}/> BUAT LAPORAN</button>
             </div>
           </div>
@@ -1759,13 +1771,23 @@ const App = () => {
                     {reportInfo.logos?.[idx] ? (
                       <>
                         <img src={reportInfo.logos[idx]} className="h-full w-full object-contain p-1" alt="" />
-                        <button onClick={() => removeLogo(idx)} className="absolute top-1.5 right-1.5 bg-red-500 text-white rounded-md p-1 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={12}/></button>
+                        <button 
+                          type="button"
+                          onClick={(e) => { e.preventDefault(); removeLogo(idx); }}
+                          onTouchEnd={(e) => { e.preventDefault(); removeLogo(idx); }}
+                          className="absolute top-1.5 right-1.5 bg-red-500 text-white rounded-md p-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity z-50 cursor-pointer shadow-md"
+                        >
+                          <Trash2 size={14} className="pointer-events-none"/>
+                        </button>
                       </>
                     ) : (
-                      <label className="cursor-pointer flex flex-col items-center justify-center w-full h-full text-slate-400 hover:bg-slate-100 transition-all">
-                        <Upload size={14} className="mb-0.5" /><span className="text-[7px] font-black uppercase">Slot {idx+1}</span>
-                        <input type="file" accept="image/*" className="hidden" onChange={(e) => handleLogoUpload(idx, e)} />
-                      </label>
+                      <>
+                        <label htmlFor={`logo-upload-${idx}`} className="cursor-pointer flex flex-col items-center justify-center w-full h-full text-slate-400 hover:bg-slate-100 transition-all absolute inset-0 z-20">
+                          <Upload size={14} className="mb-0.5 pointer-events-none" />
+                          <span className="text-[7px] font-black uppercase pointer-events-none">Slot {idx+1}</span>
+                        </label>
+                        <input id={`logo-upload-${idx}`} type="file" accept="image/jpeg, image/png, image/webp" className="hidden" onChange={(e) => handleLogoUpload(idx, e)} />
+                      </>
                     )}
                   </div>
                 ))}
@@ -1827,10 +1849,11 @@ const App = () => {
                    n[reportType] = [...(n[reportType] || []), createNewPage()[0]]; 
                    return n;
                  })} className="bg-blue-600 px-8 py-4 rounded-2xl text-[10px] font-black uppercase shadow-xl hover:bg-blue-500 transition-all">+ Halaman</button>
-                 <label className="bg-white text-slate-900 px-8 py-4 rounded-2xl text-[10px] font-black uppercase cursor-pointer shadow-xl flex items-center gap-2 hover:bg-slate-100 transition-all">
-                   <Upload size={14}/> Mega Upload
-                   <input type="file" multiple accept="image/*" className="hidden" onChange={handleMegaUpload} />
+                 
+                 <label htmlFor="mega-upload-input" className="bg-white text-slate-900 px-8 py-4 rounded-2xl text-[10px] font-black uppercase cursor-pointer shadow-xl flex items-center gap-2 hover:bg-slate-100 transition-all relative z-20">
+                   <Upload size={14} className="pointer-events-none"/> Mega Upload
                  </label>
+                 <input id="mega-upload-input" type="file" multiple="multiple" accept="image/jpeg, image/png, image/webp" className="hidden" onChange={handleMegaUpload} />
                </div>
             </div>
           </section>
@@ -1965,7 +1988,7 @@ const App = () => {
         @media print { @page { size: A4 portrait; margin: 0 !important; } .report-page-final { page-break-after: always !important; border: none !important; box-shadow: none !important; margin: 0 !important; width: 210mm !important; } }
         .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
         .line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-        input[type=range] { -webkit-appearance: none; background: #e2e8f0; height: 6px; border-radius: 3px; }
+        input[type=range] { -webkit-appearance: none; background: #e2e8f0; height: 6px; border-radius: 3px; touch-action: none; }
         input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 18px; width: 18px; border-radius: 50%; background: #3b82f6; cursor: pointer; border: 2px solid white; box-shadow: 0 0 5px rgba(0,0,0,0.1); }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
