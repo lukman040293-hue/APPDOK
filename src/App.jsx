@@ -967,15 +967,15 @@ const App = () => {
       const img = new Image(); img.src = dataUrl;
       img.onload = () => {
         const canvas = document.createElement('canvas'); 
-        const max = 1600; 
+        const max = 1024; 
         let w = img.width, h = img.height;
         if (w > max || h > max) { if (w > h) { h = Math.round((max / w) * h); w = max; } else { w = Math.round((max / h) * w); h = max; } }
         canvas.width = w; canvas.height = h; 
         const ctx = canvas.getContext('2d'); 
         ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
+        ctx.imageSmoothingQuality = 'medium';
         ctx.drawImage(img, 0, 0, w, h);
-        r(canvas.toDataURL('image/jpeg', 0.95)); 
+        r(canvas.toDataURL('image/jpeg', 0.85)); 
       };
       img.onerror = () => r(null);
     });
@@ -1228,10 +1228,10 @@ const App = () => {
       const img = new Image(); img.src = dataUrl;
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const targetW = 1760, targetH = 1000; canvas.width = targetW; canvas.height = targetH;
+        const targetW = 1320, targetH = 750; canvas.width = targetW; canvas.height = targetH;
         const ctx = canvas.getContext('2d');
         ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
+        ctx.imageSmoothingQuality = 'medium';
         ctx.filter = `brightness(${brightness}%) saturate(${saturation}%)`;
         const targetRatio = targetW / targetH; const imgRatio = img.width / img.height;
         let sX, sY, sW, sH;
@@ -1240,7 +1240,7 @@ const App = () => {
         const scale = 100 / zoom; const nw = sW * scale; const nh = sH * scale;
         const finalX = sX + ((sW - nw) * (panX / 100)); const finalY = sY + ((sH - nh) * (panY / 100));
         ctx.drawImage(img, finalX, finalY, nw, nh, 0, 0, targetW, targetH);
-        resolve(canvas.toDataURL('image/jpeg', 1.0)); 
+        resolve(canvas.toDataURL('image/jpeg', 0.9)); 
       };
       img.onerror = () => resolve(dataUrl);
     });
@@ -1286,8 +1286,8 @@ const App = () => {
         const options = { 
             margin: 0, 
             filename: `${cleanTitle}.pdf`, 
-            image: { type: 'jpeg', quality: 1.0 }, 
-            html2canvas: { scale: 3, useCORS: true, width: 794, windowWidth: 794, scrollX: 0, scrollY: 0, x: 0, y: 0 }, 
+            image: { type: 'jpeg', quality: 0.9 }, 
+            html2canvas: { scale: 2, useCORS: true, width: 794, windowWidth: 794, scrollX: 0, scrollY: 0, x: 0, y: 0 }, 
             jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } 
         };
 
