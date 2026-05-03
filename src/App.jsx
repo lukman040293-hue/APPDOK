@@ -12,6 +12,10 @@ import {
 // --- ID Sesi Unik untuk Tab ini ---
 const TAB_SESSION_ID = Math.random().toString(36).substring(2, 15);
 
+// --- AKSES DEFAULT (Didefinisikan untuk memperbaiki ReferenceError) ---
+const DEFAULT_EMAIL_IZIN = ['at.file2020@gmail.com', 'admin@gmail.com'];
+const DEFAULT_ADMIN = ['admin@gmail.com', 'at.file2020@gmail.com'];
+
 // --- FIREBASE IMPORTS ---
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
