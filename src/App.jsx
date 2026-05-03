@@ -111,6 +111,7 @@ const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleF
             <button 
               type="button"
               onClick={(e) => { e.preventDefault(); e.stopPropagation(); clearPhoto(); }}
+              onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); clearPhoto(); }}
               className="absolute top-3 right-3 sm:top-4 sm:right-4 bg-red-500 text-white p-3 sm:p-2.5 rounded-xl sm:rounded-2xl shadow-xl hover:bg-red-600 transition-all active:scale-90 z-50 cursor-pointer"
             >
               <Trash2 size={18} className="sm:w-5 sm:h-5 pointer-events-none"/>
@@ -121,12 +122,12 @@ const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleF
             <label htmlFor={camId} className={`w-full text-white py-3 sm:py-4 rounded-2xl sm:rounded-3xl text-[10px] font-black uppercase cursor-pointer flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all ${reportType === 'progres' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-blue-600 hover:bg-blue-500'}`}>
               <Camera size={18} className="sm:w-5 sm:h-5 pointer-events-none"/> AMBIL KAMERA
             </label>
-            <input id={camId} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFileUpload} />
+            <input id={camId} type="file" accept="image/jpeg, image/png, image/webp" capture="environment" className="hidden" onChange={handleFileUpload} />
             
             <label htmlFor={galId} className="w-full cursor-pointer bg-slate-100 text-slate-500 py-3 sm:py-3.5 rounded-2xl sm:rounded-3xl text-[10px] font-black uppercase flex items-center justify-center gap-2 active:scale-95 hover:bg-slate-200 transition-all">
               <ImageIcon size={16} className="sm:w-4 sm:h-4 pointer-events-none"/> PILIH GALERI
             </label>
-            <input id={galId} type="file" accept="image/*" className="hidden" onChange={handleFileUpload} />
+            <input id={galId} type="file" accept="image/jpeg, image/png, image/webp" className="hidden" onChange={handleFileUpload} />
           </div>
         )}
         
@@ -1051,12 +1052,12 @@ const App = () => {
     setPagesData(prev => {
       const n = { ...prev };
       if (!n[reportType]) return prev;
-      const currentPages = [...n[reportType]]; // Cloned array!
+      const currentPages = [...n[reportType]]; 
       if (!currentPages[pIdx]) return prev;
       const currentPageArray = [...currentPages[pIdx]];
       currentPageArray[sIdx] = { ...(currentPageArray[sIdx] || {}), [key]: val };
       currentPages[pIdx] = currentPageArray;
-      n[reportType] = currentPages; // Re-assign cloned array
+      n[reportType] = currentPages; 
       return n;
     });
   };
@@ -1970,7 +1971,7 @@ const App = () => {
         @media print { @page { size: A4 portrait; margin: 0 !important; } .report-page-final { page-break-after: always !important; border: none !important; box-shadow: none !important; margin: 0 !important; width: 210mm !important; } }
         .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
         .line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-        input[type=range] { -webkit-appearance: none; background: #e2e8f0; height: 6px; border-radius: 3px; }
+        input[type=range] { -webkit-appearance: none; background: #e2e8f0; height: 6px; border-radius: 3px; touch-action: none; }
         input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 18px; width: 18px; border-radius: 50%; background: #3b82f6; cursor: pointer; border: 2px solid white; box-shadow: 0 0 5px rgba(0,0,0,0.1); }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
