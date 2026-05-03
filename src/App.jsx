@@ -967,12 +967,15 @@ const App = () => {
       const img = new Image(); img.src = dataUrl;
       img.onload = () => {
         const canvas = document.createElement('canvas'); 
-        const max = 800; 
+        const max = 1600; 
         let w = img.width, h = img.height;
         if (w > max || h > max) { if (w > h) { h = Math.round((max / w) * h); w = max; } else { w = Math.round((max / h) * w); h = max; } }
         canvas.width = w; canvas.height = h; 
-        const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, w, h);
-        r(canvas.toDataURL('image/jpeg', 0.8)); 
+        const ctx = canvas.getContext('2d'); 
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, w, h);
+        r(canvas.toDataURL('image/jpeg', 0.95)); 
       };
       img.onerror = () => r(null);
     });
@@ -1225,9 +1228,10 @@ const App = () => {
       const img = new Image(); img.src = dataUrl;
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        // PERBAIKAN: TARGET RENDER MENGGUNAKAN RASIO ASLI KOTAK PDF AGAR TIDAK GEPENG (880x500 -> Rasio 1.76)
-        const targetW = 880, targetH = 500; canvas.width = targetW; canvas.height = targetH;
+        const targetW = 1760, targetH = 1000; canvas.width = targetW; canvas.height = targetH;
         const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
         ctx.filter = `brightness(${brightness}%) saturate(${saturation}%)`;
         const targetRatio = targetW / targetH; const imgRatio = img.width / img.height;
         let sX, sY, sW, sH;
@@ -1236,7 +1240,7 @@ const App = () => {
         const scale = 100 / zoom; const nw = sW * scale; const nh = sH * scale;
         const finalX = sX + ((sW - nw) * (panX / 100)); const finalY = sY + ((sH - nh) * (panY / 100));
         ctx.drawImage(img, finalX, finalY, nw, nh, 0, 0, targetW, targetH);
-        resolve(canvas.toDataURL('image/jpeg', 0.95)); 
+        resolve(canvas.toDataURL('image/jpeg', 1.0)); 
       };
       img.onerror = () => resolve(dataUrl);
     });
@@ -1282,9 +1286,8 @@ const App = () => {
         const options = { 
             margin: 0, 
             filename: `${cleanTitle}.pdf`, 
-            image: { type: 'jpeg', quality: 0.95 }, 
-            // PERBAIKAN PDF: Scale ditingkatkan menjadi 2 agar PDF lebih tajam, tebal, dan profesional.
-            html2canvas: { scale: 2, useCORS: true, width: 794, windowWidth: 794, scrollX: 0, scrollY: 0, x: 0, y: 0 }, 
+            image: { type: 'jpeg', quality: 1.0 }, 
+            html2canvas: { scale: 3, useCORS: true, width: 794, windowWidth: 794, scrollX: 0, scrollY: 0, x: 0, y: 0 }, 
             jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } 
         };
 
@@ -1694,12 +1697,12 @@ const App = () => {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {projects.length === 0 ? (
+            {filteredProjects.length === 0 ? (
                <div className="col-span-full bg-white p-10 rounded-2xl border border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400">
                  <ClipboardList size={40} className="mb-3 opacity-50" />
                  <p className="font-bold uppercase tracking-widest text-xs">Belum Ada Laporan</p>
                </div>
-            ) : projects.map(p => {
+            ) : filteredProjects.map(p => {
                const isProjectAdmin = DEFAULT_ADMIN.includes(activeEmail.toLowerCase());
                const authorColor = getAvatarColor(p.authorEmail);
                const authorTextColor = authorColor.replace('bg-', 'text-');
