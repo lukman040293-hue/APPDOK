@@ -122,14 +122,14 @@ const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleF
             <label htmlFor={camId} className={`w-full text-white py-3 sm:py-4 rounded-2xl sm:rounded-3xl text-[10px] font-black uppercase cursor-pointer flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all ${reportType === 'progres' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-blue-600 hover:bg-blue-500'}`}>
               <Camera size={18} className="sm:w-5 sm:h-5 pointer-events-none"/> AMBIL KAMERA
             </label>
-            {/* PERBAIKAN: Format gambar eksplisit untuk Webview dan onClick bersihkan value */}
-            <input id={camId} type="file" accept="image/jpeg, image/png, image/jpg, image/webp" capture="environment" className="hidden" onChange={handleFileUpload} onClick={(e) => { e.target.value = null; }} />
+            {/* PERBAIKAN: e.target.value diubah menjadi string kosong agar tidak memicu DOM Exception */}
+            <input id={camId} type="file" accept="image/jpeg, image/png, image/jpg, image/webp" capture="environment" className="hidden" onChange={handleFileUpload} onClick={(e) => { e.target.value = ''; }} />
             
             <label htmlFor={galId} className="w-full cursor-pointer bg-slate-100 text-slate-500 py-3 sm:py-3.5 rounded-2xl sm:rounded-3xl text-[10px] font-black uppercase flex items-center justify-center gap-2 active:scale-95 hover:bg-slate-200 transition-all">
               <ImageIcon size={16} className="sm:w-4 sm:h-4 pointer-events-none"/> PILIH GALERI
             </label>
-            {/* PERBAIKAN: Format gambar eksplisit untuk Webview dan onClick bersihkan value */}
-            <input id={galId} type="file" accept="image/jpeg, image/png, image/jpg, image/webp" className="hidden" onChange={handleFileUpload} onClick={(e) => { e.target.value = null; }} />
+            {/* PERBAIKAN: e.target.value diubah menjadi string kosong agar tidak memicu DOM Exception */}
+            <input id={galId} type="file" accept="image/jpeg, image/png, image/jpg, image/webp" className="hidden" onChange={handleFileUpload} onClick={(e) => { e.target.value = ''; }} />
           </div>
         )}
         
@@ -1029,7 +1029,11 @@ const App = () => {
     
     const curIdx = currentPage - 1; 
     const currentData = latestDataRef.current.pagesData;
-    let newPageRef = currentData[reportType][curIdx] ? [...currentData[reportType][curIdx]] : createNewPage();
+    
+    // PERBAIKAN BUG: Validasi ekstra agar newPageRef pasti sebuah array (mencegah is not iterable crash)
+    let newPageRef = Array.isArray(currentData[reportType]?.[curIdx]) 
+        ? [...currentData[reportType][curIdx]] 
+        : createNewPage();
     
     const emptySlots = []; newPageRef.forEach((s, i) => { if (!s?.src) emptySlots.push(i); });
     
@@ -1841,7 +1845,7 @@ const App = () => {
                           <Upload size={14} className="mb-0.5 pointer-events-none" />
                           <span className="text-[7px] font-black uppercase pointer-events-none">Slot {idx+1}</span>
                         </label>
-                        <input id={`logo-upload-${idx}`} type="file" accept="image/jpeg, image/png, image/jpg, image/webp" className="hidden" onChange={(e) => handleLogoUpload(idx, e)} onClick={(e) => { e.target.value = null; }} />
+                        <input id={`logo-upload-${idx}`} type="file" accept="image/jpeg, image/png, image/jpg, image/webp" className="hidden" onChange={(e) => handleLogoUpload(idx, e)} onClick={(e) => { e.target.value = ''; }} />
                       </>
                     )}
                   </div>
@@ -1908,7 +1912,7 @@ const App = () => {
                  </button>
                  <button onClick={() => setPagesData(prev => {
                    const n = {...prev}; 
-                   n[reportType] = [...(n[reportType] || []), createNewPage()[0]]; 
+                   n[reportType] = [...(n[reportType] || []), createNewPage()]; 
                    return n;
                  })} className="flex-1 lg:flex-none bg-blue-600 hover:bg-blue-700 text-white px-4 sm:px-6 py-3.5 sm:py-4 rounded-2xl text-[9px] sm:text-[10px] font-black uppercase transition-all shadow-md flex justify-center items-center gap-2">
                    <Plus size={16} className="hidden sm:block" /> + Halaman
@@ -1918,8 +1922,8 @@ const App = () => {
                    <Upload size={16} className="pointer-events-none hidden sm:block"/> Mega Upload
                  </label>
                  
-                 {/* PERBAIKAN: Format gambar eksplisit dan onClick handler untuk Android WebView */}
-                 <input id="mega-upload-input" type="file" multiple accept="image/jpeg, image/png, image/jpg, image/webp" className="hidden" onChange={handleMegaUpload} onClick={(e) => { e.target.value = null; }} />
+                 {/* PERBAIKAN: e.target.value diubah menjadi string kosong agar tidak memicu DOM Exception */}
+                 <input id="mega-upload-input" type="file" multiple accept="image/jpeg, image/png, image/jpg, image/webp" className="hidden" onChange={handleMegaUpload} onClick={(e) => { e.target.value = ''; }} />
                </div>
             </div>
           </section>
