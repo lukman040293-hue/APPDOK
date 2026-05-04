@@ -978,15 +978,15 @@ const App = () => {
       const img = new Image(); img.src = dataUrl;
       img.onload = () => {
         const canvas = document.createElement('canvas'); 
-        const max = 800; 
+        const max = 1080; // Ditingkatkan sedikit agar foto lapangan tetap tajam
         let w = img.width, h = img.height;
         if (w > max || h > max) { if (w > h) { h = Math.round((max / w) * h); w = max; } else { w = Math.round((max / h) * w); h = max; } }
         canvas.width = w; canvas.height = h; 
         const ctx = canvas.getContext('2d'); 
         ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'medium';
+        ctx.imageSmoothingQuality = 'high'; // Dikembalikan ke High
         ctx.drawImage(img, 0, 0, w, h);
-        r(canvas.toDataURL('image/jpeg', 0.75)); 
+        r(canvas.toDataURL('image/jpeg', 0.82)); 
       };
       img.onerror = () => r(null);
     });
@@ -1030,25 +1030,25 @@ const App = () => {
     const limit = Math.min(files.length, emptySlots.length);
     setStatusMsg({ text: `Proses ${limit} foto...`, type: 'info' });
     
-    for (let i = 0; i < limit; i++) {
+    const processFiles = async () => {
+      for (let i = 0; i < limit; i++) {
         const objectUrl = URL.createObjectURL(files[i]);
         const cropped = await processInitialUpload(objectUrl);
         URL.revokeObjectURL(objectUrl);
         if (cropped) {
             newPageRef[emptySlots[i]] = { ...(newPageRef[emptySlots[i]] || {}), src: cropped, brightness: 100, saturation: 100, zoom: 100, panX: 50, panY: 50 };
         }
-    }
-
-    setPagesData(p => {
+      }
+      setPagesData(p => {
         const n2 = {...p};
         const cPages = [...n2[reportType]];
         cPages[curIdx] = newPageRef;
         n2[reportType] = cPages;
         return n2;
-    });
-
-    setStatusMsg({ text: 'Selesai!', type: 'success' }); 
-    setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
+      });
+      setStatusMsg({ text: 'Selesai!', type: 'success' }); setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
+    };
+    processFiles();
     
     e.target.value = '';
   };
@@ -1119,10 +1119,16 @@ const App = () => {
     return new Promise((r) => {
       const img = new Image(); img.src = dataUrl;
       img.onload = () => {
-        const canvas = document.createElement('canvas'); const max = 300;
+        const canvas = document.createElement('canvas'); 
+        // KOP SURAT SANGAT LEBAR. Batas dinaikkan ke 2400px (Super HD) agar teks kecil tidak pecah!
+        const max = 2400; 
         let w = img.width, h = img.height;
         if (w > max || h > max) { if (w > h) { h = Math.round((max / w) * h); w = max; } else { w = Math.round((max / h) * w); h = max; } }
-        canvas.width = w; canvas.height = h; const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, w, h);
+        canvas.width = w; canvas.height = h; 
+        const ctx = canvas.getContext('2d'); 
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high'; // Memastikan render HD
+        ctx.drawImage(img, 0, 0, w, h);
         r(canvas.toDataURL('image/png'));
       };
       img.onerror = () => r(null);
@@ -1244,17 +1250,18 @@ const App = () => {
 
   const saveMentahanAndProceed = () => { downloadMentahan(); setTimeout(() => executePendingAction(), 300); };
 
-  // --- GENERATOR FILE PDF & BAKING (Perbaikan PDF Mencegah Blank + Kualitas HD + Anti-Distorsi) ---
+  // --- GENERATOR FILE PDF & BAKING ---
   const bakeImageFilters = (dataUrl, brightness, saturation, zoom = 100, panX = 50, panY = 50) => {
     if (!dataUrl) return Promise.resolve(null);
     return new Promise((resolve) => {
       const img = new Image(); img.src = dataUrl;
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const targetW = 1320, targetH = 750; canvas.width = targetW; canvas.height = targetH;
+        const targetW = 1584, targetH = 900; // Dinaikkan resolusi rendernya agar PDF lebih profesional
+        canvas.width = targetW; canvas.height = targetH;
         const ctx = canvas.getContext('2d');
         ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'medium';
+        ctx.imageSmoothingQuality = 'high'; // Dikembalikan ke High
         ctx.filter = `brightness(${brightness}%) saturate(${saturation}%)`;
         const targetRatio = targetW / targetH; const imgRatio = img.width / img.height;
         let sX, sY, sW, sH;
@@ -1263,7 +1270,7 @@ const App = () => {
         const scale = 100 / zoom; const nw = sW * scale; const nh = sH * scale;
         const finalX = sX + ((sW - nw) * (panX / 100)); const finalY = sY + ((sH - nh) * (panY / 100));
         ctx.drawImage(img, finalX, finalY, nw, nh, 0, 0, targetW, targetH);
-        resolve(canvas.toDataURL('image/jpeg', 0.9)); 
+        resolve(canvas.toDataURL('image/jpeg', 0.95)); 
       };
       img.onerror = () => resolve(dataUrl);
     });
@@ -1364,7 +1371,7 @@ const App = () => {
       for (let i = 0; i < 6; i++) {
         const col = i % 2, row = Math.floor(i / 2);
         const x = PAGE_MARGIN_SIDE + (col * (BOX_W + GAP)), y = gridStartY + (row * (BOX_H + 0.15));
-        const imgX = x + 0.1, imgY = y + 0.1, imgW = BOX_W - 0.2, imgH = 1.85; // Menyesuaikan rasio foto di PPTX agar tidak gepeng
+        const imgX = x + 0.1, imgY = y + 0.1, imgW = BOX_W - 0.2, imgH = 1.85; 
         masterObjects.push({ rect: { x, y, w: BOX_W, h: BOX_H, fill: { color: 'FFFFFF' }, line: { color: 'E2E8F0', width: 1 }, rectRadius: 0.05 } });
         masterObjects.push({ placeholder: { options: { name: `pic${i}`, type: 'pic', x: imgX, y: imgY, w: imgW, h: imgH }, text: '' } });
       }
@@ -1435,31 +1442,43 @@ const App = () => {
     let noteBorderClass = isModern ? (reportType === 'progres' ? 'border-emerald-600' : 'border-indigo-500') : (reportType === 'progres' ? 'border-emerald-500' : 'border-slate-800');
 
     return (
-      <div className={`bg-white w-[210mm] flex flex-col ${baseFontClass} relative box-border ${isFinal ? 'report-page-final' : 'mb-10 shadow-2xl rounded-xl border border-slate-200 shrink-0'}`} style={{ height: '296.7mm', padding: '10mm 15mm', margin: '0 auto', pageBreakAfter: 'always' }}>
-        <div className={`text-center pb-2 mb-3 flex-none ${headerBorderClass}`}>
+      // PERBAIKAN: Padding diubah menjadi Atas 6mm, Kanan 15mm, Bawah 15mm, Kiri 15mm agar lebih naik.
+      <div className={`bg-white w-[210mm] flex flex-col ${baseFontClass} relative box-border ${isFinal ? 'report-page-final' : 'mb-10 shadow-2xl rounded-xl border border-slate-200 shrink-0'}`} style={{ height: '296.7mm', padding: '6mm 15mm 15mm 15mm', margin: '0 auto', pageBreakAfter: 'always' }}>
+        <div className={`text-center pb-2 mb-2 flex-none ${headerBorderClass}`}>
           
-          <div className="flex justify-start items-center gap-[5px] mb-2 h-[12mm]" style={{ marginTop: '-4mm' }}>
-            {reportInfo.logos?.map((l, i) => l && <img key={i} src={l} className="h-full w-auto max-w-[45mm] object-contain object-left" alt="" />)}
+          {/* PERBAIKAN: Margin-top disesuaikan agar logo naik sedikit ke atas namun tetap rapi */}
+          <div className="flex justify-start items-center gap-[2%] mb-1.5 h-[16mm] w-full" style={{ marginTop: '-2mm' }}>
+            {reportInfo.logos?.map((l, i) => l && (
+              <img 
+                key={i} 
+                src={l} 
+                className="object-contain object-left" 
+                style={{ maxHeight: '100%', maxWidth: '32%', width: 'auto', height: 'auto' }} 
+                alt="Logo" 
+              />
+            ))}
           </div>
           
-          <h2 className={`text-xl uppercase mb-2 leading-tight ${headerTitleClass}`}>{reportInfo.title || 'LAPORAN DOKUMENTASI'}</h2>
+          <h2 className={`text-xl uppercase mb-1.5 leading-tight ${headerTitleClass}`}>{reportInfo.title || 'LAPORAN DOKUMENTASI'}</h2>
           
-          <div className="flex flex-col gap-y-0.5 text-left">
+          {/* Teks diperkecil dan dirapatkan agar muat sangat banyak baris */}
+          <div className="flex flex-col gap-y-0 text-left">
             {meta.map((m, idx) => (
-              <div key={idx} className="flex items-start uppercase text-[7.5pt] tracking-tight w-full">
-                <span className="w-28 shrink-0 font-bold text-slate-500">{m.l}</span>
+              <div key={idx} className="flex items-start uppercase text-[6.5pt] tracking-tight w-full mb-[2px]">
+                <span className="w-24 shrink-0 font-bold text-slate-500">{m.l}</span>
                 <span className="mr-1.5 font-bold text-slate-500">:</span>
-                <span className="font-black flex-1 break-words leading-tight text-slate-900">{m.v || '-'}</span>
+                <span className="font-black flex-1 break-words leading-snug text-slate-900">{m.v || '-'}</span>
               </div>
             ))}
           </div>
         </div>
 
-        <div className={`grid grid-cols-2 gap-4 flex-grow content-start pt-1`}>
+        {/* Kotak foto disusutkan 1mm menjadi 73mm agar ada kelonggaran di bagian bawah */}
+        <div className={`grid grid-cols-2 gap-4 flex-grow content-start pt-0.5`}>
           {data.map((p, i) => (
-            <div key={i} className={`p-2.5 flex flex-col h-[74.5mm] bg-white border border-slate-200 ${isModern ? 'rounded-2xl shadow-sm' : 'rounded-xl'}`}>
+            <div key={i} className={`p-2 flex flex-col h-[73mm] bg-white border border-slate-200 ${isModern ? 'rounded-2xl shadow-sm' : 'rounded-xl'} shrink-0`}>
               
-              <div className={`h-[54mm] bg-slate-50 relative overflow-hidden flex items-center justify-center border border-slate-300 ${isModern ? 'rounded-xl' : 'rounded-lg'} w-full`}>
+              <div className={`h-[53.5mm] bg-slate-50 relative overflow-hidden flex items-center justify-center border border-slate-300 ${isModern ? 'rounded-xl' : 'rounded-lg'} w-full shrink-0`}>
                 {p?.src ? (
                    isFinal || p.isBaked ? (
                      <div 
@@ -1482,12 +1501,13 @@ const App = () => {
                 ) : <ImageIcon size={30} className="text-slate-200" />}
               </div>
               
-              <div className={`mt-2.5 flex-1 flex flex-col border-l-[3px] pl-2.5 ${noteBorderClass}`}>
+              <div className={`mt-2 flex-1 flex flex-col border-l-[3px] pl-2 ${noteBorderClass}`}>
                 <div className="flex items-center justify-between mb-0.5">
                   <div className="text-[6.5pt] font-black text-slate-400 uppercase tracking-tighter">KETERANGAN:</div>
                   {reportType === 'progres' && p?.src && <div className="text-[7pt] font-black text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">PROGRES: {p.progress || 0}%</div>}
                 </div>
-                <p className={`text-[8pt] leading-tight italic line-clamp-2 ${isModern ? 'text-slate-800' : 'text-slate-800 font-medium'}`}>{p?.note || '-'}</p>
+                {/* Batasan maksimal 2 baris (line-clamp-2) dengan font lebih kecil */}
+                <p className={`text-[7.5pt] leading-tight italic line-clamp-2 ${isModern ? 'text-slate-800' : 'text-slate-800 font-medium'}`}>{p?.note || '-'}</p>
               </div>
             </div>
           ))}
@@ -1840,31 +1860,40 @@ const App = () => {
 
               <div className="md:col-span-2 mt-4 pt-4 border-t border-slate-100">
                 <label className="text-[9px] font-black text-blue-500 ml-2 flex items-center gap-1.5 mb-2"><Palette size={14} /> TEMA TAMPILAN PDF</label>
-                <div className="flex gap-2 bg-slate-50 p-2 rounded-2xl shadow-inner border border-slate-200 overflow-x-auto max-w-sm">
+                <div className="flex gap-2 bg-slate-50 p-2 rounded-2xl shadow-inner border border-slate-200 w-full">
                    {['klasik', 'modern'].map(t => (
-                     <button key={t} onClick={() => setReportInfo({...reportInfo, template: t})} className={`min-w-[90px] flex-1 py-3 rounded-xl text-[10px] font-black capitalize transition-all ${reportInfo.template === t ? 'bg-white shadow-md text-blue-600 border border-blue-200' : 'text-slate-400'}`}>{t}</button>
+                     <button key={t} onClick={() => setReportInfo({...reportInfo, template: t})} className={`flex-1 py-3.5 rounded-xl text-[11px] sm:text-xs tracking-widest font-black capitalize transition-all ${reportInfo.template === t ? 'bg-white shadow-md text-blue-600 border border-blue-200' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}>{t}</button>
                    ))}
                 </div>
               </div>
             </div>
 
-            <div className="flex flex-col lg:flex-row items-center justify-between mt-10 bg-slate-900 p-4 rounded-[40px] text-white shadow-2xl gap-6">
+            <div className="flex flex-col lg:flex-row items-center justify-between mt-12 bg-slate-900 p-6 rounded-[40px] text-white shadow-2xl gap-6">
                <div className="flex items-center gap-6">
-                 <button onClick={() => setCurrentPage(c => Math.max(1, c-1))} className="p-2.5 bg-white/10 rounded-xl hover:bg-white/20 transition-all"><ChevronLeft size={20}/></button>
-                 <span className="font-black text-lg w-20 text-center">{currentPage} / {pages.length}</span>
-                 <button onClick={() => setCurrentPage(c => Math.min(pages.length, c+1))} className="p-2.5 bg-white/10 rounded-xl hover:bg-white/20 transition-all"><ChevronRight size={20}/></button>
+                 <button onClick={() => setCurrentPage(c => Math.max(1, c-1))} className="p-3 sm:p-4 bg-transparent hover:bg-white/10 rounded-2xl transition-all"><ChevronLeft size={20}/></button>
+                 <span className="font-black text-lg sm:text-xl w-24 text-center">{currentPage} / {pages.length}</span>
+                 <button onClick={() => setCurrentPage(c => Math.min(pages.length, c+1))} className="p-3 sm:p-4 bg-transparent hover:bg-white/10 rounded-2xl transition-all"><ChevronRight size={20}/></button>
                </div>
-               <div className="flex flex-wrap gap-3 justify-center lg:justify-end flex-grow">
-                 {pages.length > 1 && <button onClick={() => setShowDeletePageModal(true)} className="flex-1 sm:flex-none bg-red-600 text-white px-3 py-3 rounded-xl text-[9px] font-black uppercase">HAPUS HAL</button>}
-                 <button onClick={executeDeleteAllPhotos} className="flex-1 sm:flex-none bg-orange-500 text-white px-3 py-3 rounded-xl text-[9px] font-black uppercase">KOSONGKAN</button>
+               
+               <div className="flex flex-wrap gap-2 sm:gap-3 w-full lg:w-auto justify-center lg:justify-end">
+                 {pages.length > 1 && (
+                   <button onClick={() => setShowDeletePageModal(true)} className="flex-1 lg:flex-none bg-rose-500 hover:bg-rose-600 text-white px-4 sm:px-6 py-3.5 sm:py-4 rounded-2xl text-[9px] sm:text-[10px] font-black uppercase transition-all shadow-md">
+                     Hapus Hal
+                   </button>
+                 )}
+                 <button onClick={executeDeleteAllPhotos} className="flex-1 lg:flex-none bg-amber-500 hover:bg-amber-600 text-white px-4 sm:px-6 py-3.5 sm:py-4 rounded-2xl text-[9px] sm:text-[10px] font-black uppercase transition-all shadow-md">
+                   Kosongkan
+                 </button>
                  <button onClick={() => setPagesData(prev => {
                    const n = {...prev}; 
                    n[reportType] = [...(n[reportType] || []), createNewPage()[0]]; 
                    return n;
-                 })} className="bg-blue-600 px-8 py-4 rounded-2xl text-[10px] font-black uppercase shadow-xl hover:bg-blue-500 transition-all">+ Halaman</button>
+                 })} className="flex-1 lg:flex-none bg-blue-600 hover:bg-blue-700 text-white px-4 sm:px-6 py-3.5 sm:py-4 rounded-2xl text-[9px] sm:text-[10px] font-black uppercase transition-all shadow-md flex justify-center items-center gap-2">
+                   <Plus size={16} className="hidden sm:block" /> + Halaman
+                 </button>
                  
-                 <label htmlFor="mega-upload-input" className="bg-white text-slate-900 px-8 py-4 rounded-2xl text-[10px] font-black uppercase cursor-pointer shadow-xl flex items-center gap-2 hover:bg-slate-100 transition-all relative z-20">
-                   <Upload size={14} className="pointer-events-none"/> Mega Upload
+                 <label htmlFor="mega-upload-input" className="flex-1 lg:flex-none bg-white text-slate-900 hover:bg-slate-100 px-4 sm:px-6 py-3.5 sm:py-4 rounded-2xl text-[9px] sm:text-[10px] font-black uppercase cursor-pointer shadow-md transition-all flex items-center justify-center gap-2 relative z-20">
+                   <Upload size={16} className="pointer-events-none hidden sm:block"/> Mega Upload
                  </label>
                  <input id="mega-upload-input" type="file" multiple accept="image/*" className="hidden" onChange={handleMegaUpload} />
                </div>
