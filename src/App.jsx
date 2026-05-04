@@ -6,7 +6,7 @@ import {
   ArrowLeft, Calendar, Briefcase, FileText, Loader2, WifiOff, 
   HardDrive, UploadCloud, Lock, User, LogOut, ZoomIn, ZoomOut, 
   Maximize, Palette, Filter, Save, FileStack, Layers, Activity, 
-  Users, Share2 
+  Users, Share2, RotateCcw
 } from 'lucide-react';
 
 // ============================================================================
@@ -76,7 +76,13 @@ const createPageHash = (pageData) => {
 
 const getAvatarColor = (email) => {
     if (!email) return 'bg-slate-500';
-    const colors = ['bg-blue-500', 'bg-emerald-500', 'bg-purple-500', 'bg-rose-500', 'bg-amber-500', 'bg-cyan-500', 'bg-indigo-500', 'bg-pink-500'];
+    const colors = [
+        'bg-red-500', 'bg-orange-500', 'bg-amber-500', 'bg-yellow-500', 
+        'bg-lime-500', 'bg-green-500', 'bg-emerald-500', 'bg-teal-500', 
+        'bg-cyan-500', 'bg-sky-500', 'bg-blue-500', 'bg-indigo-500', 
+        'bg-violet-500', 'bg-purple-500', 'bg-fuchsia-500', 'bg-pink-500', 
+        'bg-rose-500'
+    ];
     let hash = 0;
     for (let i = 0; i < email.length; i++) hash = email.charCodeAt(i) + ((hash << 5) - hash);
     return colors[Math.abs(hash) % colors.length];
@@ -98,10 +104,19 @@ const safeArray = (item) => {
 // ============================================================================
 const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleFileUpload }) => {
   const [tab, setTab] = useState('filter');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const { zoom = 100, panX = 50, panY = 50, brightness = 100, saturation = 100, progress = 0 } = p || {};
   
   const camId = `cam-${pIdx}-${sIdx}`;
   const galId = `gal-${pIdx}-${sIdx}`;
+
+  const resetAdjustments = () => {
+    updatePhoto('brightness', 100);
+    updatePhoto('saturation', 100);
+    updatePhoto('zoom', 100);
+    updatePhoto('panX', 50);
+    updatePhoto('panY', 50);
+  };
 
   return (
     <div className="bg-white rounded-[32px] sm:rounded-[48px] shadow-xl overflow-hidden flex flex-col group border-2 border-transparent hover:border-blue-500 transition-all duration-500 hover:shadow-2xl">
@@ -114,14 +129,23 @@ const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleF
               style={p.isBaked ? {} : { filter: `brightness(${brightness}%) saturate(${saturation}%)`, transform: `scale(${zoom / 100})`, transformOrigin: `${panX}% ${panY}%` }} 
               alt="" 
             />
-            <button 
-              type="button"
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); clearPhoto(); }}
-              onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); clearPhoto(); }}
-              className="absolute top-3 right-3 sm:top-4 sm:right-4 bg-red-500 text-white p-3 sm:p-2.5 rounded-xl sm:rounded-2xl shadow-xl hover:bg-red-600 transition-all active:scale-90 z-50 cursor-pointer"
-            >
-              <Trash2 size={18} className="sm:w-5 sm:h-5 pointer-events-none"/>
-            </button>
+            {showDeleteConfirm ? (
+              <div className="absolute inset-0 bg-slate-900/85 flex flex-col items-center justify-center z-50 animate-in fade-in">
+                 <p className="text-white text-sm font-black mb-4 tracking-widest uppercase">Hapus Foto?</p>
+                 <div className="flex gap-3">
+                    <button onClick={(e) => { e.preventDefault(); setShowDeleteConfirm(false); }} className="bg-slate-600 hover:bg-slate-500 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase active:scale-95 transition-all">Batal</button>
+                    <button onClick={(e) => { e.preventDefault(); setShowDeleteConfirm(false); clearPhoto(); }} className="bg-red-500 hover:bg-red-400 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase shadow-lg shadow-red-500/30 active:scale-95 transition-all">Hapus</button>
+                 </div>
+              </div>
+            ) : (
+              <button 
+                type="button"
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowDeleteConfirm(true); }}
+                className="absolute top-3 right-3 sm:top-4 sm:right-4 bg-red-500 text-white p-3 sm:p-2.5 rounded-xl sm:rounded-2xl shadow-xl hover:bg-red-600 transition-all active:scale-90 z-40 cursor-pointer"
+              >
+                <Trash2 size={18} className="sm:w-5 sm:h-5 pointer-events-none"/>
+              </button>
+            )}
           </>
         ) : (
           <div className="flex flex-col gap-3 w-full px-6 sm:px-10 text-center relative z-20">
@@ -147,9 +171,14 @@ const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleF
       <div className="p-4 sm:p-6 flex-grow flex flex-col space-y-3 sm:space-y-4">
         {p?.src && (
           <>
-            <div className="flex bg-slate-100 p-1 rounded-xl sm:rounded-2xl">
-              <button onClick={() => setTab('filter')} className={`flex-1 py-1.5 sm:py-2 text-[9px] sm:text-[10px] font-black uppercase rounded-lg sm:rounded-xl transition-all ${tab === 'filter' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}>🎨 Filter</button>
-              <button onClick={() => setTab('crop')} className={`flex-1 py-1.5 sm:py-2 text-[9px] sm:text-[10px] font-black uppercase rounded-lg sm:rounded-xl transition-all ${tab === 'crop' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}>📐 Posisi</button>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex bg-slate-100 p-1 rounded-xl sm:rounded-2xl flex-grow">
+                <button onClick={() => setTab('filter')} className={`flex-1 py-1.5 sm:py-2 text-[9px] sm:text-[10px] font-black uppercase rounded-lg sm:rounded-xl transition-all ${tab === 'filter' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}>🎨 Filter</button>
+                <button onClick={() => setTab('crop')} className={`flex-1 py-1.5 sm:py-2 text-[9px] sm:text-[10px] font-black uppercase rounded-lg sm:rounded-xl transition-all ${tab === 'crop' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}>📐 Posisi</button>
+              </div>
+              <button onClick={resetAdjustments} className="shrink-0 bg-slate-50 border border-slate-200 text-slate-400 hover:text-blue-600 px-3 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black uppercase flex items-center gap-1.5 active:scale-95 transition-all">
+                <RotateCcw size={12}/> Normal
+              </button>
             </div>
 
             <div className="space-y-3 sm:space-y-4 animate-in fade-in duration-300">
@@ -1397,7 +1426,7 @@ const App = () => {
         try { 
             window.scrollTo(0, 0); 
             
-            // LOGIKA SHARE (Tetap menggunakan html2pdf untuk dikirim via WA)
+            // PERBAIKAN: LOGIKA SHARE WA CERDAS
             if (pdfAction === 'share') {
                 const totalPages = (bakedPages || pages).length;
                 const maxPixels = 12000000;
@@ -1417,41 +1446,52 @@ const App = () => {
                 const pdfBlob = await window.html2pdf().set(options).from(element).output('blob');
                 const file = new File([pdfBlob], `${cleanTitle}.pdf`, { type: 'application/pdf' });
                 
+                // Jika Browser mendukung Share File NATIVE (Kirim Langsung)
                 if (navigator.canShare && navigator.canShare({ files: [file] })) {
-                    await navigator.share({
-                        files: [file],
-                        title: reportInfo.title || 'Laporan Dokumentasi',
-                        text: 'Berikut adalah laporan dokumentasi lapangan.'
-                    });
-                    setStatusMsg({ text: 'Berhasil dibagikan!', type: 'success' });
+                    try {
+                        await navigator.share({
+                            files: [file],
+                            title: reportInfo.title || 'Laporan Dokumentasi',
+                            text: '*Laporan Dokumentasi Lapangan*'
+                        });
+                        setStatusMsg({ text: 'Berhasil dibagikan!', type: 'success' });
+                    } catch (e) {
+                        setStatusMsg({ text: 'Batal Dibagikan', type: 'info' });
+                    }
                 } else {
-                    setStatusMsg({ text: 'Otomatis Mengunduh...', type: 'info' });
+                    // FALLBACK WHATSAPP: Jika Browser memblokir pengiriman file langsung
+                    setStatusMsg({ text: 'Download & Buka WA...', type: 'info' });
+                    
+                    // 1. Download file-nya dulu ke memori HP
                     await window.html2pdf().set(options).from(element).save();
+                    
+                    // 2. Arahkan ke WhatsApp
+                    setTimeout(() => {
+                        setStatusMsg({ text: 'Silakan lampirkan PDF di WA!', type: 'success' });
+                        const waText = encodeURIComponent(`Berikut adalah ${reportInfo.title || 'Laporan Dokumentasi Lapangan'}. \n\n*(Catatan: File PDF telah diunduh ke HP saya, saya akan melampirkannya di bawah ini)*`);
+                        window.open(`https://api.whatsapp.com/send?text=${waText}`, '_blank');
+                    }, 1500);
                 }
                 
                 setIsPdfLoading(false); 
                 setBakedPages(null); 
                 setShouldTriggerDownload(false); 
-                setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000); 
+                setTimeout(() => setStatusMsg({ text: '', type: '' }), 3000); 
 
             } 
-            // PERBAIKAN KRUSIAL: LOGIKA DOWNLOAD MENGGUNAKAN NATIVE BROWSER PRINT UNTUK TEKS 100% HD VECTOR!
+            // LOGIKA CETAK PDF NATIVE (Teks Vektor Tajam)
             else {
                 setStatusMsg({ text: 'Pilih "Simpan sebagai PDF"', type: 'info' });
                 
                 await new Promise((resolve) => {
-                     // Fungsi untuk membersihkan memori setelah dialog print ditutup
                      const afterPrint = () => {
                          window.removeEventListener('afterprint', afterPrint);
                          resolve();
                      };
                      window.addEventListener('afterprint', afterPrint);
                      
-                     // Beri waktu 0.5 detik agar DOM sempat di-render utuh sebelum dipotret Browser
                      setTimeout(() => {
                          window.print();
-                         
-                         // Fallback pengaman: Jika Browser HP tidak memicu event afterprint, kita tutup paksa setelah 4 detik
                          setTimeout(() => {
                              window.removeEventListener('afterprint', afterPrint);
                              resolve();
@@ -1767,9 +1807,12 @@ const App = () => {
               <button onClick={() => setView('edit')} className={`shrink-0 px-3 py-2 sm:px-5 sm:py-2.5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-black transition-all ${view === 'edit' ? 'bg-white text-black shadow-lg' : 'text-slate-400 hover:text-white'}`}>EDITOR</button>
               <button onClick={() => setView('preview')} className={`shrink-0 px-3 py-2 sm:px-5 sm:py-2.5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-black transition-all ${view === 'preview' ? 'bg-white text-black shadow-lg' : 'text-slate-400 hover:text-white'}`}>PREVIEW</button>
               <div className="w-px h-6 bg-white/20 mx-1 shrink-0"></div>
+              
+              {/* TOMBOL SHARE / BAGIKAN WA */}
               <button onClick={() => triggerPdfBaking('share')} disabled={isPdfLoading} className="shrink-0 bg-blue-500 hover:bg-blue-400 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl sm:rounded-2xl font-black text-[10px] sm:text-xs text-white flex items-center gap-1.5 sm:gap-2 shadow-lg transition-all active:scale-95 disabled:opacity-50">
-                {isPdfLoading && pdfAction === 'share' ? <Loader2 size={16} className="animate-spin w-4 h-4 sm:w-5 sm:h-5"/> : <Share2 size={16} className="w-4 h-4 sm:w-5 sm:h-5"/>} BAGIKAN
+                {isPdfLoading && pdfAction === 'share' ? <Loader2 size={16} className="animate-spin w-4 h-4 sm:w-5 sm:h-5"/> : <Share2 size={16} className="w-4 h-4 sm:w-5 sm:h-5"/>} SHARE WA
               </button>
+              
               <button onClick={() => triggerPdfBaking('download')} disabled={isPdfLoading} className="shrink-0 bg-emerald-600 hover:bg-emerald-500 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl sm:rounded-2xl font-black text-[10px] sm:text-xs text-white flex items-center gap-1.5 shadow-lg active:scale-95 disabled:opacity-50">
                 {isPdfLoading && pdfAction === 'download' ? <Loader2 size={16} className="animate-spin"/> : <FileDown size={16}/>} CETAK PDF
               </button>
@@ -1892,7 +1935,9 @@ const App = () => {
                     <div className="space-y-1.5 mb-4 flex-grow text-[10px] text-slate-500 font-medium">
                       <div className="flex items-center gap-2 truncate"><Briefcase size={12} /> {p.reportInfo?.customMeta?.[0]?.value || p.reportInfo?.project || '-'}</div>
                       <div className="flex items-center gap-2"><FileText size={12} /> {p.lastActiveTab === 'progres' ? (p.pageCountProgres || 1) : (p.pageCountUmum || p.pageCount || 1)} Halaman <span className="ml-auto px-1.5 py-0.5 rounded text-[8px] font-black uppercase border border-slate-200">{p.lastActiveTab}</span></div>
-                      <div className="flex items-center gap-2"><Calendar size={12} /> {new Date(p.updatedAt || Date.now()).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+                      {isAdmin && (
+                        <div className="flex items-center gap-2"><Calendar size={12} /> {new Date(p.updatedAt || Date.now()).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+                      )}
                     </div>
                     
                     <button onClick={() => openProject(p)} className="w-full bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 py-2.5 rounded-xl font-black text-[10px] uppercase transition-all flex justify-center items-center gap-2">
