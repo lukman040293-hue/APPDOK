@@ -122,12 +122,12 @@ const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleF
             <label htmlFor={camId} className={`w-full text-white py-3 sm:py-4 rounded-2xl sm:rounded-3xl text-[10px] font-black uppercase cursor-pointer flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all ${reportType === 'progres' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-blue-600 hover:bg-blue-500'}`}>
               <Camera size={18} className="sm:w-5 sm:h-5 pointer-events-none"/> AMBIL KAMERA
             </label>
-            <input id={camId} type="file" accept="image/jpeg, image/png, image/webp" capture="environment" className="hidden" onChange={handleFileUpload} />
+            <input id={camId} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFileUpload} />
             
             <label htmlFor={galId} className="w-full cursor-pointer bg-slate-100 text-slate-500 py-3 sm:py-3.5 rounded-2xl sm:rounded-3xl text-[10px] font-black uppercase flex items-center justify-center gap-2 active:scale-95 hover:bg-slate-200 transition-all">
               <ImageIcon size={16} className="sm:w-4 sm:h-4 pointer-events-none"/> PILIH GALERI
             </label>
-            <input id={galId} type="file" accept="image/jpeg, image/png, image/webp" className="hidden" onChange={handleFileUpload} />
+            <input id={galId} type="file" accept="image/*" className="hidden" onChange={handleFileUpload} />
           </div>
         )}
         
@@ -1906,8 +1906,8 @@ const App = () => {
                    <Upload size={16} className="pointer-events-none hidden sm:block"/> Mega Upload
                  </label>
                  
-                 {/* PERBAIKAN: Format gambar dibuat spesifik agar HP wajib membuka Galeri, dan input dijaga tetap di dalam DOM (opacity-0) agar Safari/Chrome Mobile tidak memblokir Multi-select */}
-                 <input id="mega-upload-input" type="file" multiple={true} accept="image/png, image/jpeg, image/jpg, image/webp" className="w-px h-px opacity-0 absolute overflow-hidden -z-10" onChange={handleMegaUpload} />
+                 {/* PERBAIKAN: Mengembalikan format image/* agar maksimal di WebView Android */}
+                 <input id="mega-upload-input" type="file" multiple={true} accept="image/*" className="w-px h-px opacity-0 absolute overflow-hidden -z-10" onChange={handleMegaUpload} />
                </div>
             </div>
           </section>
