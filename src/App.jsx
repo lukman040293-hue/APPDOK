@@ -128,14 +128,12 @@ const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleF
             <label htmlFor={camId} className={`w-full text-white py-3 sm:py-4 rounded-2xl sm:rounded-3xl text-[10px] font-black uppercase cursor-pointer flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all ${reportType === 'progres' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-blue-600 hover:bg-blue-500'}`}>
               <Camera size={18} className="sm:w-5 sm:h-5 pointer-events-none"/> AMBIL KAMERA
             </label>
-            {/* Kamera dibiarkan image/* agar Intent Kamera langsung terbuka */}
-            <input id={camId} type="file" accept="image/*" capture="environment" className="w-px h-px opacity-0 absolute overflow-hidden -z-10" onChange={handleFileUpload} onClick={(e) => { e.target.value = ''; }} />
+            <input id={camId} type="file" accept="image/*" capture="environment" className="w-px h-px opacity-0 absolute overflow-hidden -z-10" onChange={handleFileUpload} />
             
             <label htmlFor={galId} className="w-full cursor-pointer bg-slate-100 text-slate-500 py-3 sm:py-3.5 rounded-2xl sm:rounded-3xl text-[10px] font-black uppercase flex items-center justify-center gap-2 active:scale-95 hover:bg-slate-200 transition-all">
               <ImageIcon size={16} className="sm:w-4 sm:h-4 pointer-events-none"/> PILIH GALERI
             </label>
-            {/* Menggunakan mimetype spesifik dan transparan untuk WebView */}
-            <input id={galId} type="file" accept="image/jpeg, image/png, image/webp" className="w-px h-px opacity-0 absolute overflow-hidden -z-10" onChange={handleFileUpload} onClick={(e) => { e.target.value = ''; }} />
+            <input id={galId} type="file" accept="image/jpeg, image/png, image/webp" className="w-px h-px opacity-0 absolute overflow-hidden -z-10" onChange={handleFileUpload} />
           </div>
         )}
         
@@ -992,7 +990,6 @@ const App = () => {
     }
   }, [view]);
 
-  // PERBAIKAN: Kompresi dinaikkan ke tingkat SEDANG (Medium)
   const processInitialUpload = (dataUrl) => {
     return new Promise((r) => {
       const img = new Image(); img.src = dataUrl;
@@ -1014,8 +1011,6 @@ const App = () => {
     });
   };
 
-  // PERBAIKAN KRUSIAL: Membaca dengan Object URL murni (Anti RAM Penuh), 
-  // Ditambah Fallback FileReader yang input-nya hanya dihapus di akhir agar tidak terputus.
   const handleFileUpload = async (pIdx, sIdx, e) => {
     const file = e.target.files?.[0]; 
     if (!file) return;
@@ -1023,12 +1018,10 @@ const App = () => {
     setStatusMsg({ text: 'Mengolah Foto...', type: 'info' });
     
     try {
-        // Coba jalur paling hemat RAM (Object URL)
         let objectUrl = URL.createObjectURL(file);
         let optimized = await processInitialUpload(objectUrl);
         URL.revokeObjectURL(objectUrl);
 
-        // Jika WebView menolak Object URL (misal: di Android lama), putar ke jalur klasik
         if (!optimized) {
              optimized = await new Promise((resolve) => {
                  const reader = new FileReader();
@@ -1051,12 +1044,10 @@ const App = () => {
         setStatusMsg({ text: 'Memori HP Penuh', type: 'error' });
     }
     
-    // PERBAIKAN: Input HANYA dibersihkan SETELAH semua proses membaca tuntas agar sistem tidak crash
     e.target.value = ''; 
     setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
   };
 
-  // PERBAIKAN BUG MEGA UPLOAD: Menggunakan struktur Promise Dual-Engine
   const handleMegaUpload = async (e) => {
     const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
     if (files.length === 0) {
@@ -1083,7 +1074,6 @@ const App = () => {
     const limit = Math.min(files.length, emptySlots.length);
     setStatusMsg({ text: `Proses ${limit} foto...`, type: 'info' });
     
-    // Proses satu persatu (berurutan) agar tidak Crash Memory
     const processFiles = async () => {
       for (let i = 0; i < limit; i++) {
         const file = files[i];
@@ -1123,7 +1113,6 @@ const App = () => {
       setStatusMsg({ text: 'Selesai!', type: 'success' }); 
       setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
       
-      // PERBAIKAN: Pembersih Input hanya dieksekusi SETELAH tuntas semua gambar
       e.target.value = ''; 
     };
     
@@ -1230,7 +1219,7 @@ const App = () => {
         } else {
             setStatusMsg({ text: 'Gagal diproses', type: 'error' });
         }
-        e.target.value = ''; // Safely clear value after completion
+        e.target.value = ''; 
         setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
     };
     reader.onerror = () => {
@@ -1308,7 +1297,7 @@ const App = () => {
         setStatusMsg({ text: 'Gagal / File Rusak', type: 'error' }); 
         setTimeout(() => setStatusMsg({ text: '', type: '' }), 3000); 
       }
-      e.target.value = ''; // Safely clear value
+      e.target.value = ''; 
     };
     reader.onerror = () => {
         e.target.value = '';
@@ -1369,10 +1358,10 @@ const App = () => {
   };
 
   const triggerPdfBaking = async (action = 'download') => {
-    if (!isLibraryReady.pdf) return;
+    if (!isLibraryReady.pdf && action === 'share') return; // Library hanya wajib untuk share
     setPdfAction(action);
     setIsPdfLoading(true); 
-    setStatusMsg({ text: action === 'share' ? 'Menyiapkan File...' : 'Membangun PDF...', type: 'info' });
+    setStatusMsg({ text: action === 'share' ? 'Menyiapkan File...' : 'Menyiapkan Data Cetak...', type: 'info' });
     
     try {
       const processed = await Promise.all(pages.map(async (page) => {
@@ -1405,34 +1394,26 @@ const App = () => {
         
         const cleanTitle = (reportInfo.title || 'LAPORAN_DOKUMENTASI').replace(/ /g, '_');
         
-        const totalPages = (bakedPages || pages).length;
-        const isMobile = window.innerWidth < 768;
-        
-        const maxPixels = 12000000;
-        const areaPerPage = 794 * 1122; 
-        let safeScale = Math.sqrt(maxPixels / (areaPerPage * totalPages));
-        
-        if (safeScale > 2) safeScale = 2; 
-        if (safeScale < 0.8) safeScale = 0.8; 
-        
-        const options = { 
-            margin: 0, 
-            filename: `${cleanTitle}.pdf`, 
-            image: { type: 'jpeg', quality: 0.95 }, 
-            html2canvas: { 
-               scale: safeScale, 
-               useCORS: true, 
-               width: 794, 
-               windowWidth: 794, 
-               scrollX: 0, 
-               scrollY: 0 
-            }, 
-            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } 
-        };
-
         try { 
             window.scrollTo(0, 0); 
+            
+            // LOGIKA SHARE (Tetap menggunakan html2pdf untuk dikirim via WA)
             if (pdfAction === 'share') {
+                const totalPages = (bakedPages || pages).length;
+                const maxPixels = 12000000;
+                const areaPerPage = 794 * 1122; 
+                let safeScale = Math.sqrt(maxPixels / (areaPerPage * totalPages));
+                if (safeScale > 2) safeScale = 2; 
+                if (safeScale < 0.8) safeScale = 0.8; 
+                
+                const options = { 
+                    margin: 0, 
+                    filename: `${cleanTitle}.pdf`, 
+                    image: { type: 'jpeg', quality: 0.95 }, 
+                    html2canvas: { scale: safeScale, useCORS: true, width: 794, windowWidth: 794, scrollX: 0, scrollY: 0 }, 
+                    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } 
+                };
+
                 const pdfBlob = await window.html2pdf().set(options).from(element).output('blob');
                 const file = new File([pdfBlob], `${cleanTitle}.pdf`, { type: 'application/pdf' });
                 
@@ -1447,16 +1428,47 @@ const App = () => {
                     setStatusMsg({ text: 'Otomatis Mengunduh...', type: 'info' });
                     await window.html2pdf().set(options).from(element).save();
                 }
-            } else {
-                await window.html2pdf().set(options).from(element).save(); 
-                setStatusMsg({ text: 'PDF Diunduh!', type: 'success' }); 
+                
+                setIsPdfLoading(false); 
+                setBakedPages(null); 
+                setShouldTriggerDownload(false); 
+                setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000); 
+
+            } 
+            // PERBAIKAN KRUSIAL: LOGIKA DOWNLOAD MENGGUNAKAN NATIVE BROWSER PRINT UNTUK TEKS 100% HD VECTOR!
+            else {
+                setStatusMsg({ text: 'Pilih "Simpan sebagai PDF"', type: 'info' });
+                
+                await new Promise((resolve) => {
+                     // Fungsi untuk membersihkan memori setelah dialog print ditutup
+                     const afterPrint = () => {
+                         window.removeEventListener('afterprint', afterPrint);
+                         resolve();
+                     };
+                     window.addEventListener('afterprint', afterPrint);
+                     
+                     // Beri waktu 0.5 detik agar DOM sempat di-render utuh sebelum dipotret Browser
+                     setTimeout(() => {
+                         window.print();
+                         
+                         // Fallback pengaman: Jika Browser HP tidak memicu event afterprint, kita tutup paksa setelah 4 detik
+                         setTimeout(() => {
+                             window.removeEventListener('afterprint', afterPrint);
+                             resolve();
+                         }, 4000);
+                     }, 500);
+                });
+
+                setStatusMsg({ text: 'Selesai!', type: 'success' }); 
+                setIsPdfLoading(false); 
+                setBakedPages(null); 
+                setShouldTriggerDownload(false); 
+                setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000); 
             }
         } 
         catch (e) {
             console.error(e);
             setStatusMsg({ text: e.name === 'AbortError' ? 'Batal Dibagikan' : 'Dibatalkan / Selesai', type: 'info' });
-        }
-        finally { 
             setIsPdfLoading(false); 
             setBakedPages(null); 
             setShouldTriggerDownload(false); 
@@ -1759,7 +1771,7 @@ const App = () => {
                 {isPdfLoading && pdfAction === 'share' ? <Loader2 size={16} className="animate-spin w-4 h-4 sm:w-5 sm:h-5"/> : <Share2 size={16} className="w-4 h-4 sm:w-5 sm:h-5"/>} BAGIKAN
               </button>
               <button onClick={() => triggerPdfBaking('download')} disabled={isPdfLoading} className="shrink-0 bg-emerald-600 hover:bg-emerald-500 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl sm:rounded-2xl font-black text-[10px] sm:text-xs text-white flex items-center gap-1.5 shadow-lg active:scale-95 disabled:opacity-50">
-                {isPdfLoading && pdfAction === 'download' ? <Loader2 size={16} className="animate-spin"/> : <FileDown size={16}/>} PDF
+                {isPdfLoading && pdfAction === 'download' ? <Loader2 size={16} className="animate-spin"/> : <FileDown size={16}/>} CETAK PDF
               </button>
               <button onClick={downloadMentahan} className="shrink-0 bg-slate-700 hover:bg-slate-600 px-3 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl font-black text-[10px] sm:text-xs text-white flex items-center gap-1.5 sm:gap-2 shadow-lg transition-all" title="Simpan Mentahan (.json)"><HardDrive size={16} /><span className="hidden lg:inline">MENTAHAN</span></button>
               <button onClick={downloadPPTX} disabled={isPptLoading} className="shrink-0 bg-orange-600 hover:bg-orange-500 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl sm:rounded-2xl font-black text-[10px] sm:text-xs text-white flex items-center gap-1.5 shadow-lg active:scale-95 disabled:opacity-50">{isPptLoading ? <Loader2 size={16} className="animate-spin"/> : <Presentation size={16}/>} PPTX</button>
@@ -2038,8 +2050,8 @@ const App = () => {
         </main>
       )}
 
-      {/* RENDER AREA PDF (Disembunyikan di z-index -1000 agar tidak terlihat, tapi dirender normal tanpa masalah koordinat) */}
-      <div style={{ position: 'absolute', top: 0, left: '-9999px', pointerEvents: 'none', zIndex: -1000 }}>
+      {/* RENDER AREA PDF (Menggunakan ID Wrapper khusus untuk Native Print) */}
+      <div id="pdf-container-wrapper" style={{ position: 'absolute', top: 0, left: '-9999px', pointerEvents: 'none', zIndex: -1000 }}>
          <div id="pdf-render-area" style={{ width: '210mm', backgroundColor: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
            {(bakedPages || pages).map((p, i) => <ReportPage key={`render-${i}`} data={p} isFinal={true} />)}
          </div>
@@ -2117,8 +2129,39 @@ const App = () => {
         </div>
       )}
 
+      {/* PERBAIKAN KRUSIAL: Memaksa Native CSS Print bekerja sempurna untuk Browser HP */}
       <style dangerouslySetInnerHTML={{ __html: `
-        @media print { @page { size: A4 portrait; margin: 0 !important; } .report-page-final { page-break-after: always !important; border: none !important; box-shadow: none !important; margin: 0 !important; width: 210mm !important; } }
+        @media print { 
+            @page { size: A4 portrait; margin: 0 !important; } 
+            body { background: white !important; }
+            header, main, .fixed, nav, button { display: none !important; }
+            
+            #pdf-container-wrapper {
+                position: static !important;
+                left: auto !important;
+                top: auto !important;
+                pointer-events: auto !important;
+                display: block !important;
+                width: 100% !important;
+                visibility: visible !important;
+            }
+            #pdf-render-area {
+                width: 210mm !important;
+            }
+            .report-page-final { 
+                width: 210mm !important;
+                height: 296.7mm !important;
+                page-break-after: always !important; 
+                page-break-inside: avoid !important;
+                border: none !important; 
+                box-shadow: none !important; 
+                margin: 0 !important; 
+            } 
+            * { 
+                -webkit-print-color-adjust: exact !important; 
+                print-color-adjust: exact !important; 
+            }
+        }
         .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
         .line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
         input[type=range] { -webkit-appearance: none; background: #e2e8f0; height: 6px; border-radius: 3px; touch-action: none; }
