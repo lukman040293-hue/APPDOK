@@ -129,14 +129,14 @@ const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleF
             <label htmlFor={camId} className={`w-full text-white py-3 sm:py-4 rounded-2xl sm:rounded-3xl text-[10px] font-black uppercase cursor-pointer flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all ${reportType === 'progres' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-blue-600 hover:bg-blue-500'}`}>
               <Camera size={18} className="sm:w-5 sm:h-5 pointer-events-none"/> AMBIL KAMERA
             </label>
-            {/* Input dipaksa tersembunyi lewat CSS agar aman dari blokir WebView */}
-            <input id={camId} type="file" accept="image/*" capture="environment" className="w-px h-px opacity-0 absolute overflow-hidden -z-10" onChange={handleFileUpload} />
+            {/* PERBAIKAN KAMERA: Kembali menggunakan image/* agar Android WebView langsung trigger kamera murni tanpa bingung */}
+            <input id={camId} type="file" accept="image/*" capture="environment" className="w-px h-px opacity-0 absolute overflow-hidden -z-10" onChange={handleFileUpload} onClick={(e) => { e.target.value = ''; }} />
             
             <label htmlFor={galId} className="w-full cursor-pointer bg-slate-100 text-slate-500 py-3 sm:py-3.5 rounded-2xl sm:rounded-3xl text-[10px] font-black uppercase flex items-center justify-center gap-2 active:scale-95 hover:bg-slate-200 transition-all">
               <ImageIcon size={16} className="sm:w-4 sm:h-4 pointer-events-none"/> PILIH GALERI
             </label>
-            {/* Input dipaksa tersembunyi lewat CSS agar aman dari blokir WebView */}
-            <input id={galId} type="file" accept="image/*" className="w-px h-px opacity-0 absolute overflow-hidden -z-10" onChange={handleFileUpload} />
+            {/* Galeri tetap format spesifik agar mencegah file aneh */}
+            <input id={galId} type="file" accept="image/jpeg, image/png, image/jpg, image/webp" className="w-px h-px opacity-0 absolute overflow-hidden -z-10" onChange={handleFileUpload} onClick={(e) => { e.target.value = ''; }} />
           </div>
         )}
         
@@ -332,7 +332,6 @@ const App = () => {
     const hasText = !!(info.project || info.department || info.contractor || info.consultant || (info.title && info.title !== 'LAPORAN DOKUMENTASI LAPANGAN'));
     const hasMeta = !!(info.customMeta && info.customMeta.some(m => m.value && m.value.trim() !== ''));
     
-    // Perbaikan safe check untuk media
     const umum = safeArray(pagesObj.umum);
     const progres = safeArray(pagesObj.progres);
     const hasMedia = [...umum, ...progres].flat().some(p => p && (p.src !== null || (p.note && p.note.trim() !== '')));
@@ -746,7 +745,6 @@ const App = () => {
     }
   };
 
-  // --- PERBAIKAN: REALTIME AUTO-SAVE (MENGGANTIKAN INTERVAL 30 DETIK) ---
   useEffect(() => {
     if (!user || !activeProjectId || view === 'dashboard' || isOfflineMode) return;
     
@@ -996,7 +994,6 @@ const App = () => {
   }, [view]);
 
   // PERBAIKAN: Kompresi dinaikkan ke tingkat SEDANG (Medium)
-  // Kualitas disesuaikan ke 75% dengan maks 960px. Lebih tajam untuk PDF, namun diusahakan tetap aman di batas 1MB cloud.
   const processInitialUpload = (dataUrl) => {
     return new Promise((r) => {
       const img = new Image(); img.src = dataUrl;
@@ -1013,38 +1010,40 @@ const App = () => {
         r(canvas.toDataURL('image/jpeg', 0.75)); 
       };
       img.onerror = () => {
-          setStatusMsg({ text: 'Gambar rusak / gagal dibaca', type: 'error' });
-          setTimeout(() => setStatusMsg({ text: '', type: '' }), 3000);
           r(null);
       };
     });
   };
 
+  // PERBAIKAN KRUSIAL: Membuang FileReader yang menyedot RAM, diganti dengan URL Object yang hemat RAM
   const handleFileUpload = async (pIdx, sIdx, e) => {
     const file = e.target.files?.[0]; 
     if (!file) return;
     
     setStatusMsg({ text: 'Mengolah Foto...', type: 'info' });
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      const optimized = await processInitialUpload(ev.target.result);
-      if (optimized) {
-        updateSpecificPhoto(pIdx, sIdx, 'src', optimized);
-        setStatusMsg({ text: 'Siap!', type: 'success' });
-      } else {
-        setStatusMsg({ text: 'Gagal olah foto', type: 'error' });
-      }
-      setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
-    };
-    reader.onerror = () => {
-        setStatusMsg({ text: 'Web menolak akses file', type: 'error' });
-        setTimeout(() => setStatusMsg({ text: '', type: '' }), 3000);
-    };
-    reader.readAsDataURL(file);
-    e.target.value = ''; // Safely clear value after reading
+    
+    try {
+        // Trik khusus: Membuat URL bayangan tanpa memuat file mentah ke dalam RAM
+        const objectUrl = URL.createObjectURL(file);
+        const optimized = await processInitialUpload(objectUrl);
+        
+        // Segera bersihkan memori HP setelah gambar dikompres
+        URL.revokeObjectURL(objectUrl);
+
+        if (optimized) {
+          updateSpecificPhoto(pIdx, sIdx, 'src', optimized);
+          setStatusMsg({ text: 'Siap!', type: 'success' });
+        } else {
+          setStatusMsg({ text: 'Gagal olah foto', type: 'error' });
+        }
+    } catch (err) {
+        setStatusMsg({ text: 'Memori HP Penuh', type: 'error' });
+    }
+    
+    setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
+    e.target.value = ''; // Bersihkan input
   };
 
-  // PERBAIKAN: Penyelesaian Bug 'is not iterable' di MegaUpload
   const handleMegaUpload = async (e) => {
     const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
     if (files.length === 0) return;
@@ -1052,7 +1051,6 @@ const App = () => {
     const curIdx = currentPage - 1; 
     const currentData = latestDataRef.current.pagesData;
     
-    // PERBAIKAN BUG: Gunakan safeArray untuk menjamin data selalu terbaca sebagai Array
     const typePages = safeArray(currentData[reportType]);
     const currentPageArray = safeArray(typePages[curIdx] || createNewPage());
     let newPageRef = [...currentPageArray];
@@ -1088,7 +1086,7 @@ const App = () => {
       setStatusMsg({ text: 'Selesai!', type: 'success' }); setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
     };
     processFiles();
-    e.target.value = ''; // Safely clear value after reading
+    e.target.value = ''; 
   };
 
   const updateSpecificPhoto = (pIdx, sIdx, key, val) => {
@@ -1189,7 +1187,7 @@ const App = () => {
         setStatusMsg({ text: 'Logo Terpasang!', type: 'success' }); 
     }
     setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
-    e.target.value = ''; // Safely clear value
+    e.target.value = ''; 
   };
 
   const removeLogo = (idx) => { 
@@ -1261,7 +1259,7 @@ const App = () => {
         setTimeout(() => setStatusMsg({ text: '', type: '' }), 3000); 
       }
     };
-    reader.readAsText(file); e.target.value = ''; // Safely clear value
+    reader.readAsText(file); e.target.value = ''; 
   };
 
   const executePendingAction = async () => {
@@ -1353,17 +1351,15 @@ const App = () => {
         
         const cleanTitle = (reportInfo.title || 'LAPORAN_DOKUMENTASI').replace(/ /g, '_');
         
-        // PERBAIKAN: Mencegah PDF Blank di HP karena Memory Crash
         const totalPages = (bakedPages || pages).length;
         const isMobile = window.innerWidth < 768;
         
-        // Kalkulasi pintar untuk membatasi ukuran memori canvas (Max ~12 Megapixel)
         const maxPixels = 12000000;
         const areaPerPage = 794 * 1122; 
         let safeScale = Math.sqrt(maxPixels / (areaPerPage * totalPages));
         
-        if (safeScale > 2) safeScale = 2; // Batasi maksimal scale 2 agar lancar
-        if (safeScale < 0.8) safeScale = 0.8; // Batasi minimal scale agar tulisan tetap terbaca
+        if (safeScale > 2) safeScale = 2; 
+        if (safeScale < 0.8) safeScale = 0.8; 
         
         const options = { 
             margin: 0, 
@@ -1873,7 +1869,7 @@ const App = () => {
                           <Upload size={14} className="mb-0.5 pointer-events-none" />
                           <span className="text-[7px] font-black uppercase pointer-events-none">Slot {idx+1}</span>
                         </label>
-                        <input id={`logo-upload-${idx}`} type="file" accept="image/*" className="w-px h-px opacity-0 absolute overflow-hidden -z-10" onChange={(e) => handleLogoUpload(idx, e)} />
+                        <input id={`logo-upload-${idx}`} type="file" accept="image/*" className="w-px h-px opacity-0 absolute overflow-hidden -z-10" onChange={(e) => handleLogoUpload(idx, e)} onClick={(e) => { e.target.value = ''; }} />
                       </>
                     )}
                   </div>
@@ -1946,7 +1942,7 @@ const App = () => {
                    <Upload size={16} className="pointer-events-none hidden sm:block"/> Mega Upload
                  </label>
                  
-                 <input id="mega-upload-input" type="file" multiple accept="image/*" className="w-px h-px opacity-0 absolute overflow-hidden -z-10" onChange={handleMegaUpload} />
+                 <input id="mega-upload-input" type="file" multiple accept="image/*" className="w-px h-px opacity-0 absolute overflow-hidden -z-10" onChange={handleMegaUpload} onClick={(e) => { e.target.value = ''; }} />
                </div>
             </div>
           </section>
