@@ -971,20 +971,18 @@ const App = () => {
     }
   }, [view]);
 
-  // PERBAIKAN: Turunkan resolusi foto mentah (max 800px) agar file tidak terlalu besar
-  // Ini menghindari error batas limit 1 MB dokumen Firestore di Firebase.
   const processInitialUpload = (dataUrl) => {
     return new Promise((r) => {
       const img = new Image(); img.src = dataUrl;
       img.onload = () => {
         const canvas = document.createElement('canvas'); 
-        const max = 1080; // Ditingkatkan sedikit agar foto lapangan tetap tajam
+        const max = 1080; 
         let w = img.width, h = img.height;
         if (w > max || h > max) { if (w > h) { h = Math.round((max / w) * h); w = max; } else { w = Math.round((max / h) * w); h = max; } }
         canvas.width = w; canvas.height = h; 
         const ctx = canvas.getContext('2d'); 
         ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high'; // Dikembalikan ke High
+        ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, 0, 0, w, h);
         r(canvas.toDataURL('image/jpeg', 0.82)); 
       };
@@ -1010,7 +1008,6 @@ const App = () => {
     e.target.value = '';
   };
 
-  // PERBAIKAN: MegaUpload sekarang membaca memori dengan benar tanpa terjebak di state React
   const handleMegaUpload = async (e) => {
     const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
     if (files.length === 0) return;
@@ -1120,14 +1117,13 @@ const App = () => {
       const img = new Image(); img.src = dataUrl;
       img.onload = () => {
         const canvas = document.createElement('canvas'); 
-        // KOP SURAT SANGAT LEBAR. Batas dinaikkan ke 2400px (Super HD) agar teks kecil tidak pecah!
         const max = 2400; 
         let w = img.width, h = img.height;
         if (w > max || h > max) { if (w > h) { h = Math.round((max / w) * h); w = max; } else { w = Math.round((max / h) * w); h = max; } }
         canvas.width = w; canvas.height = h; 
         const ctx = canvas.getContext('2d'); 
         ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high'; // Memastikan render HD
+        ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, 0, 0, w, h);
         r(canvas.toDataURL('image/png'));
       };
@@ -1223,7 +1219,6 @@ const App = () => {
     reader.readAsText(file); e.target.value = '';
   };
 
-  // PERBAIKAN: Dibuat async agar tidak unmount sebelum sempat menyetor data ke cloud
   const executePendingAction = async () => {
     setShowReminderModal(false);
     if (pendingAction === 'dashboard') {
@@ -1257,11 +1252,11 @@ const App = () => {
       const img = new Image(); img.src = dataUrl;
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const targetW = 1584, targetH = 900; // Dinaikkan resolusi rendernya agar PDF lebih profesional
+        const targetW = 1584, targetH = 900; 
         canvas.width = targetW; canvas.height = targetH;
         const ctx = canvas.getContext('2d');
         ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high'; // Dikembalikan ke High
+        ctx.imageSmoothingQuality = 'high'; 
         ctx.filter = `brightness(${brightness}%) saturate(${saturation}%)`;
         const targetRatio = targetW / targetH; const imgRatio = img.width / img.height;
         let sX, sY, sW, sH;
@@ -1313,11 +1308,31 @@ const App = () => {
         
         const cleanTitle = (reportInfo.title || 'LAPORAN_DOKUMENTASI').replace(/ /g, '_');
         
+        // PERBAIKAN: Mencegah PDF Blank di HP karena Memory Crash
+        const totalPages = (bakedPages || pages).length;
+        const isMobile = window.innerWidth < 768;
+        
+        // Kalkulasi pintar untuk membatasi ukuran memori canvas (Max ~12 Megapixel)
+        const maxPixels = 12000000;
+        const areaPerPage = 794 * 1122; 
+        let safeScale = Math.sqrt(maxPixels / (areaPerPage * totalPages));
+        
+        if (safeScale > 2) safeScale = 2; // Batasi maksimal scale 2 agar lancar
+        if (safeScale < 0.8) safeScale = 0.8; // Batasi minimal scale agar tulisan tetap terbaca
+        
         const options = { 
             margin: 0, 
             filename: `${cleanTitle}.pdf`, 
-            image: { type: 'jpeg', quality: 0.9 }, 
-            html2canvas: { scale: 2, useCORS: true, width: 794, windowWidth: 794, scrollX: 0, scrollY: 0, x: 0, y: 0 }, 
+            image: { type: 'jpeg', quality: 0.95 }, 
+            html2canvas: { 
+               scale: safeScale, 
+               useCORS: true, 
+               width: 794, 
+               windowWidth: 794, 
+               scrollX: 0, 
+               scrollY: 0 
+               // x dan y sengaja dihilangkan agar html2canvas mau memotret elemen di belakang layar
+            }, 
             jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } 
         };
 
@@ -1442,11 +1457,9 @@ const App = () => {
     let noteBorderClass = isModern ? (reportType === 'progres' ? 'border-emerald-600' : 'border-indigo-500') : (reportType === 'progres' ? 'border-emerald-500' : 'border-slate-800');
 
     return (
-      // PERBAIKAN: Padding diubah menjadi Atas 6mm, Kanan 15mm, Bawah 15mm, Kiri 15mm agar lebih naik.
       <div className={`bg-white w-[210mm] flex flex-col ${baseFontClass} relative box-border ${isFinal ? 'report-page-final' : 'mb-10 shadow-2xl rounded-xl border border-slate-200 shrink-0'}`} style={{ height: '296.7mm', padding: '6mm 15mm 15mm 15mm', margin: '0 auto', pageBreakAfter: 'always' }}>
         <div className={`text-center pb-2 mb-2 flex-none ${headerBorderClass}`}>
           
-          {/* PERBAIKAN: Margin-top disesuaikan agar logo naik sedikit ke atas namun tetap rapi */}
           <div className="flex justify-start items-center gap-[2%] mb-1.5 h-[16mm] w-full" style={{ marginTop: '-2mm' }}>
             {reportInfo.logos?.map((l, i) => l && (
               <img 
@@ -1461,7 +1474,6 @@ const App = () => {
           
           <h2 className={`text-xl uppercase mb-1.5 leading-tight ${headerTitleClass}`}>{reportInfo.title || 'LAPORAN DOKUMENTASI'}</h2>
           
-          {/* Teks diperkecil dan dirapatkan agar muat sangat banyak baris */}
           <div className="flex flex-col gap-y-0 text-left">
             {meta.map((m, idx) => (
               <div key={idx} className="flex items-start uppercase text-[6.5pt] tracking-tight w-full mb-[2px]">
@@ -1473,7 +1485,6 @@ const App = () => {
           </div>
         </div>
 
-        {/* Kotak foto disusutkan 1mm menjadi 73mm agar ada kelonggaran di bagian bawah */}
         <div className={`grid grid-cols-2 gap-4 flex-grow content-start pt-0.5`}>
           {data.map((p, i) => (
             <div key={i} className={`p-2 flex flex-col h-[73mm] bg-white border border-slate-200 ${isModern ? 'rounded-2xl shadow-sm' : 'rounded-xl'} shrink-0`}>
@@ -1506,7 +1517,6 @@ const App = () => {
                   <div className="text-[6.5pt] font-black text-slate-400 uppercase tracking-tighter">KETERANGAN:</div>
                   {reportType === 'progres' && p?.src && <div className="text-[7pt] font-black text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">PROGRES: {p.progress || 0}%</div>}
                 </div>
-                {/* Batasan maksimal 2 baris (line-clamp-2) dengan font lebih kecil */}
                 <p className={`text-[7.5pt] leading-tight italic line-clamp-2 ${isModern ? 'text-slate-800' : 'text-slate-800 font-medium'}`}>{p?.note || '-'}</p>
               </div>
             </div>
@@ -1895,7 +1905,9 @@ const App = () => {
                  <label htmlFor="mega-upload-input" className="flex-1 lg:flex-none bg-white text-slate-900 hover:bg-slate-100 px-4 sm:px-6 py-3.5 sm:py-4 rounded-2xl text-[9px] sm:text-[10px] font-black uppercase cursor-pointer shadow-md transition-all flex items-center justify-center gap-2 relative z-20">
                    <Upload size={16} className="pointer-events-none hidden sm:block"/> Mega Upload
                  </label>
-                 <input id="mega-upload-input" type="file" multiple accept="image/*" className="hidden" onChange={handleMegaUpload} />
+                 
+                 {/* PERBAIKAN: Format gambar dibuat spesifik agar HP wajib membuka Galeri, dan input dijaga tetap di dalam DOM (opacity-0) agar Safari/Chrome Mobile tidak memblokir Multi-select */}
+                 <input id="mega-upload-input" type="file" multiple={true} accept="image/png, image/jpeg, image/jpg, image/webp" className="w-px h-px opacity-0 absolute overflow-hidden -z-10" onChange={handleMegaUpload} />
                </div>
             </div>
           </section>
@@ -1937,8 +1949,8 @@ const App = () => {
         </main>
       )}
 
-      {/* RENDER AREA PDF (Off-Screen untuk menghindari PDF kosong) */}
-      <div style={{ position: 'absolute', top: 0, left: '-9999px', opacity: 0.001, pointerEvents: 'none', zIndex: -1000 }}>
+      {/* RENDER AREA PDF (Disembunyikan di z-index -1000 agar tidak terlihat, tapi dirender normal tanpa masalah koordinat) */}
+      <div style={{ position: 'absolute', top: 0, left: '-9999px', pointerEvents: 'none', zIndex: -1000 }}>
          <div id="pdf-render-area" style={{ width: '210mm', backgroundColor: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
            {(bakedPages || pages).map((p, i) => <ReportPage key={`render-${i}`} data={p} isFinal={true} />)}
          </div>
