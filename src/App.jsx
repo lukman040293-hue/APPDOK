@@ -995,12 +995,14 @@ const App = () => {
     }
   }, [view]);
 
+  // PERBAIKAN: Kompresi dinaikkan ke tingkat SEDANG (Medium)
+  // Kualitas disesuaikan ke 75% dengan maks 960px. Lebih tajam untuk PDF, namun diusahakan tetap aman di batas 1MB cloud.
   const processInitialUpload = (dataUrl) => {
     return new Promise((r) => {
       const img = new Image(); img.src = dataUrl;
       img.onload = () => {
         const canvas = document.createElement('canvas'); 
-        const max = 800; 
+        const max = 960; 
         let w = img.width, h = img.height;
         if (w > max || h > max) { if (w > h) { h = Math.round((max / w) * h); w = max; } else { w = Math.round((max / h) * w); h = max; } }
         canvas.width = w; canvas.height = h; 
@@ -1008,7 +1010,7 @@ const App = () => {
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, 0, 0, w, h);
-        r(canvas.toDataURL('image/jpeg', 0.65)); 
+        r(canvas.toDataURL('image/jpeg', 0.75)); 
       };
       img.onerror = () => {
           setStatusMsg({ text: 'Gambar rusak / gagal dibaca', type: 'error' });
