@@ -87,6 +87,13 @@ const getInitials = (email) => {
     return email.substring(0, 2).toUpperCase();
 };
 
+// PELINDUNG DATA: Mencegah error "is not iterable" saat memori Firebase berubah format
+const safeArray = (item) => {
+    if (Array.isArray(item)) return item;
+    if (item && typeof item === 'object') return Object.values(item);
+    return [];
+};
+
 // ============================================================================
 // 3. KOMPONEN KARTU FOTO (EDITOR)
 // ============================================================================
@@ -122,12 +129,14 @@ const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleF
             <label htmlFor={camId} className={`w-full text-white py-3 sm:py-4 rounded-2xl sm:rounded-3xl text-[10px] font-black uppercase cursor-pointer flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all ${reportType === 'progres' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-blue-600 hover:bg-blue-500'}`}>
               <Camera size={18} className="sm:w-5 sm:h-5 pointer-events-none"/> AMBIL KAMERA
             </label>
-            <input id={camId} type="file" accept="image/jpeg, image/png, image/jpg, image/webp" capture="environment" className="hidden" onChange={handleFileUpload} onClick={(e) => { e.target.value = ''; }} />
+            {/* Input dipaksa tersembunyi lewat CSS agar aman dari blokir WebView */}
+            <input id={camId} type="file" accept="image/*" capture="environment" className="w-px h-px opacity-0 absolute overflow-hidden -z-10" onChange={handleFileUpload} />
             
             <label htmlFor={galId} className="w-full cursor-pointer bg-slate-100 text-slate-500 py-3 sm:py-3.5 rounded-2xl sm:rounded-3xl text-[10px] font-black uppercase flex items-center justify-center gap-2 active:scale-95 hover:bg-slate-200 transition-all">
               <ImageIcon size={16} className="sm:w-4 sm:h-4 pointer-events-none"/> PILIH GALERI
             </label>
-            <input id={galId} type="file" accept="image/jpeg, image/png, image/jpg, image/webp" className="hidden" onChange={handleFileUpload} onClick={(e) => { e.target.value = ''; }} />
+            {/* Input dipaksa tersembunyi lewat CSS agar aman dari blokir WebView */}
+            <input id={galId} type="file" accept="image/*" className="w-px h-px opacity-0 absolute overflow-hidden -z-10" onChange={handleFileUpload} />
           </div>
         )}
         
@@ -250,7 +259,8 @@ const App = () => {
   
   const pages = useMemo(() => {
     const p = pagesData[reportType];
-    return (p && Array.isArray(p) && p.length > 0) ? p : [createNewPage()];
+    const arr = safeArray(p);
+    return arr.length > 0 ? arr : [createNewPage()];
   }, [pagesData, reportType]);
 
   const [currentPage, setCurrentPage] = useState(1);
@@ -321,7 +331,12 @@ const App = () => {
     if (!info || !pagesObj) return true;
     const hasText = !!(info.project || info.department || info.contractor || info.consultant || (info.title && info.title !== 'LAPORAN DOKUMENTASI LAPANGAN'));
     const hasMeta = !!(info.customMeta && info.customMeta.some(m => m.value && m.value.trim() !== ''));
-    const hasMedia = [...(pagesObj.umum || []), ...(pagesObj.progres || [])].flat().some(p => p && (p.src !== null || (p.note && p.note.trim() !== '')));
+    
+    // Perbaikan safe check untuk media
+    const umum = safeArray(pagesObj.umum);
+    const progres = safeArray(pagesObj.progres);
+    const hasMedia = [...umum, ...progres].flat().some(p => p && (p.src !== null || (p.note && p.note.trim() !== '')));
+    
     const hasLogo = !!(info.logos && info.logos.some(l => l !== null));
     return !hasText && !hasMeta && !hasMedia && !hasLogo;
   };
@@ -329,14 +344,18 @@ const App = () => {
   const checkHasChanges = (id, info, pagesObj) => {
     if (!lastSavedHashRef.current.reportInfo) return true; 
     if (JSON.stringify(info) !== lastSavedHashRef.current.reportInfo) return true;
-    if (pagesObj.umum.length !== (lastSavedHashRef.current.umumLength || 0)) return true;
-    if (pagesObj.progres.length !== (lastSavedHashRef.current.progresLength || 0)) return true;
+    
+    const umum = safeArray(pagesObj.umum);
+    const progres = safeArray(pagesObj.progres);
+    
+    if (umum.length !== (lastSavedHashRef.current.umumLength || 0)) return true;
+    if (progres.length !== (lastSavedHashRef.current.progresLength || 0)) return true;
 
-    for (let i = 0; i < pagesObj.umum.length; i++) {
-        if (createPageHash(pagesObj.umum[i]) !== lastSavedHashRef.current[`${id}_umum_${i}`]) return true;
+    for (let i = 0; i < umum.length; i++) {
+        if (createPageHash(umum[i]) !== lastSavedHashRef.current[`${id}_umum_${i}`]) return true;
     }
-    for (let i = 0; i < pagesObj.progres.length; i++) {
-        if (createPageHash(pagesObj.progres[i]) !== lastSavedHashRef.current[`${id}_progres_${i}`]) return true;
+    for (let i = 0; i < progres.length; i++) {
+        if (createPageHash(progres[i]) !== lastSavedHashRef.current[`${id}_progres_${i}`]) return true;
     }
     return false;
   };
@@ -654,11 +673,15 @@ const App = () => {
       };
       
       const projRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_projects', id);
+      
+      const umum = safeArray(pagesObj.umum);
+      const progres = safeArray(pagesObj.progres);
+      
       await addToBatch(projRef, { 
         reportInfo: info, 
         lastActiveTab: type, 
-        pageCountUmum: pagesObj.umum.length, 
-        pageCountProgres: pagesObj.progres.length, 
+        pageCountUmum: umum.length, 
+        pageCountProgres: progres.length, 
         updatedAt: timeToSave || Date.now(), 
         authorEmail: emailToSave,
         lastSavedBy: TAB_SESSION_ID 
@@ -666,22 +689,22 @@ const App = () => {
 
       const isPageBlank = (pageData) => !pageData || pageData.every(p => !p?.src && (!p?.note || p.note.trim() === ''));
 
-      const processPagesToBatch = async (pages, typeStr, oldLength) => {
-          for (let i = 0; i < pages.length; i++) {
-              const currentHash = createPageHash(pages[i]);
+      const processPagesToBatch = async (pArr, typeStr, oldLength) => {
+          for (let i = 0; i < pArr.length; i++) {
+              const currentHash = createPageHash(pArr[i]);
               
               if (lastSavedHashRef.current[`${id}_${typeStr}_${i}`] !== currentHash) {
                   const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_${typeStr}_page_${i}`);
-                  if (isPageBlank(pages[i])) {
+                  if (isPageBlank(pArr[i])) {
                       await addToBatch(pageRef, null, true);
                   } else {
-                      await addToBatch(pageRef, { index: i, projectId: id, type: typeStr, data: pages[i] }, false);
+                      await addToBatch(pageRef, { index: i, projectId: id, type: typeStr, data: pArr[i] }, false);
                   }
                   lastSavedHashRef.current[`${id}_${typeStr}_${i}`] = currentHash;
               }
           }
           
-          for (let i = pages.length; i < oldLength; i++) {
+          for (let i = pArr.length; i < oldLength; i++) {
               if (lastSavedHashRef.current[`${id}_${typeStr}_${i}`] !== undefined) {
                   const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_${typeStr}_page_${i}`);
                   await addToBatch(pageRef, null, true);
@@ -690,17 +713,17 @@ const App = () => {
           }
       };
 
-      const oldUmumLength = lastSavedHashRef.current.umumLength || pagesObj.umum.length;
-      const oldProgresLength = lastSavedHashRef.current.progresLength || pagesObj.progres.length;
+      const oldUmumLength = lastSavedHashRef.current.umumLength || umum.length;
+      const oldProgresLength = lastSavedHashRef.current.progresLength || progres.length;
 
-      await processPagesToBatch(pagesObj.umum, 'umum', oldUmumLength);
-      await processPagesToBatch(pagesObj.progres, 'progres', oldProgresLength);
+      await processPagesToBatch(umum, 'umum', oldUmumLength);
+      await processPagesToBatch(progres, 'progres', oldProgresLength);
       
       await commitBatch();
 
       lastSavedHashRef.current.reportInfo = JSON.stringify(info);
-      lastSavedHashRef.current.umumLength = pagesObj.umum.length;
-      lastSavedHashRef.current.progresLength = pagesObj.progres.length;
+      lastSavedHashRef.current.umumLength = umum.length;
+      lastSavedHashRef.current.progresLength = progres.length;
       
       isNewlyCreatedRef.current = false;
 
@@ -731,7 +754,6 @@ const App = () => {
     if (isProjectEmpty(currentData.reportInfo, currentData.pagesData)) return;
 
     if (checkHasChanges(activeProjectId, currentData.reportInfo, currentData.pagesData)) {
-        // Jika mendeteksi perubahan (ngetik/upload), tunggu 2.5 detik lalu kirim diam-diam
         const timer = setTimeout(() => {
             if (!isSavingRef.current) {
                const isOwner = activeEmail === projectAuthor;
@@ -973,8 +995,6 @@ const App = () => {
     }
   }, [view]);
 
-  // PERBAIKAN: Kompresi cerdas untuk mengamankan limit 1MB Firebase
-  // Kualitas disesuaikan ke 65% dengan maks 800px. Sangat tajam untuk PDF, sangat kecil ukurannya di cloud.
   const processInitialUpload = (dataUrl) => {
     return new Promise((r) => {
       const img = new Image(); img.src = dataUrl;
@@ -1000,11 +1020,7 @@ const App = () => {
 
   const handleFileUpload = async (pIdx, sIdx, e) => {
     const file = e.target.files?.[0]; 
-    if (!file) {
-        setStatusMsg({ text: 'Gagal mengambil file', type: 'error' });
-        setTimeout(() => setStatusMsg({ text: '', type: '' }), 3000);
-        return;
-    }
+    if (!file) return;
     
     setStatusMsg({ text: 'Mengolah Foto...', type: 'info' });
     const reader = new FileReader();
@@ -1023,6 +1039,7 @@ const App = () => {
         setTimeout(() => setStatusMsg({ text: '', type: '' }), 3000);
     };
     reader.readAsDataURL(file);
+    e.target.value = ''; // Safely clear value after reading
   };
 
   // PERBAIKAN: Penyelesaian Bug 'is not iterable' di MegaUpload
@@ -1033,17 +1050,17 @@ const App = () => {
     const curIdx = currentPage - 1; 
     const currentData = latestDataRef.current.pagesData;
     
-    // Perbaikan bug: Ambil Array dengan aman, jika belum ada buatkan 1 Set Array baru
-    const currentPageArray = currentData[reportType]?.[curIdx];
-    let newPageRef = Array.isArray(currentPageArray) 
-        ? [...currentPageArray] 
-        : createNewPage();
+    // PERBAIKAN BUG: Gunakan safeArray untuk menjamin data selalu terbaca sebagai Array
+    const typePages = safeArray(currentData[reportType]);
+    const currentPageArray = safeArray(typePages[curIdx] || createNewPage());
+    let newPageRef = [...currentPageArray];
     
     const emptySlots = []; newPageRef.forEach((s, i) => { if (!s?.src) emptySlots.push(i); });
     
     if (emptySlots.length === 0) { 
         setStatusMsg({ text: 'Penuh!', type: 'error' }); 
         setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000); 
+        e.target.value = '';
         return; 
     }
     
@@ -1061,7 +1078,7 @@ const App = () => {
       }
       setPagesData(p => {
         const n2 = {...p};
-        const cPages = [...(n2[reportType] || [])];
+        const cPages = [...safeArray(n2[reportType])];
         cPages[curIdx] = newPageRef;
         n2[reportType] = cPages;
         return n2;
@@ -1069,15 +1086,17 @@ const App = () => {
       setStatusMsg({ text: 'Selesai!', type: 'success' }); setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
     };
     processFiles();
+    e.target.value = ''; // Safely clear value after reading
   };
 
   const updateSpecificPhoto = (pIdx, sIdx, key, val) => {
     setPagesData(prev => {
       const n = { ...prev };
-      if (!n[reportType]) return prev;
-      const currentPages = [...n[reportType]]; 
+      const currentTypePages = safeArray(n[reportType]);
+      if (currentTypePages.length === 0) return prev;
+      const currentPages = [...currentTypePages]; 
       if (!currentPages[pIdx]) return prev;
-      const currentPageArray = [...currentPages[pIdx]];
+      const currentPageArray = [...safeArray(currentPages[pIdx])];
       currentPageArray[sIdx] = { ...(currentPageArray[sIdx] || {}), [key]: val };
       currentPages[pIdx] = currentPageArray;
       n[reportType] = currentPages; 
@@ -1088,8 +1107,11 @@ const App = () => {
   const clearSpecificPhoto = (pIdx, sIdx) => {
     setPagesData(prev => {
       const n = { ...prev };
-      const currentPages = [...n[reportType]];
-      const currentPageArray = [...currentPages[pIdx]];
+      const currentTypePages = safeArray(n[reportType]);
+      if (currentTypePages.length === 0) return prev;
+      const currentPages = [...currentTypePages];
+      if (!currentPages[pIdx]) return prev;
+      const currentPageArray = [...safeArray(currentPages[pIdx])];
       currentPageArray[sIdx] = { id: Date.now(), src: null, note: '', brightness: 100, saturation: 100, progress: 0, zoom: 100, panX: 50, panY: 50 };
       currentPages[pIdx] = currentPageArray;
       n[reportType] = currentPages;
@@ -1100,7 +1122,7 @@ const App = () => {
   const executeDeleteAllPhotos = () => {
     setPagesData(prev => { 
         const n = {...prev}; 
-        const cPages = [...n[reportType]];
+        const cPages = [...safeArray(n[reportType])];
         cPages[currentPage - 1] = createNewPage();
         n[reportType] = cPages;
         return n; 
@@ -1113,7 +1135,7 @@ const App = () => {
     if (pages.length >= 50) { setStatusMsg({ text: 'Maksimal 50 Halaman!', type: 'error' }); setTimeout(() => setStatusMsg({ text: '', type: '' }), 3000); return; }
     setPagesData(prev => {
         const n = {...prev};
-        n[reportType] = [...(n[reportType] || []), createNewPage()];
+        n[reportType] = [...safeArray(n[reportType]), createNewPage()];
         return n;
     });
     setCurrentPage(pages.length + 1);
@@ -1122,7 +1144,7 @@ const App = () => {
   const executeDeletePage = () => {
     setShowDeletePageModal(false);
     if (pages.length <= 1) { executeDeleteAllPhotos(); return; }
-    const newPages = pages.filter((_, idx) => idx !== currentPage - 1);
+    const newPages = safeArray(pages).filter((_, idx) => idx !== currentPage - 1);
     setPagesData(prev => {
         const n = {...prev};
         n[reportType] = newPages;
@@ -1133,13 +1155,12 @@ const App = () => {
     setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
   };
 
-  // PERBAIKAN: Kompresi Logo diturunkan ke maks 800px agar dokumen Firebase tidak kepenuhan!
   const processLogoUpload = (dataUrl) => {
     return new Promise((r) => {
       const img = new Image(); img.src = dataUrl;
       img.onload = () => {
         const canvas = document.createElement('canvas'); 
-        const max = 800; // Aman untuk Firestore & sangat jernih untuk PDF
+        const max = 800; 
         let w = img.width, h = img.height;
         if (w > max || h > max) { if (w > h) { h = Math.round((max / w) * h); w = max; } else { w = Math.round((max / h) * w); h = max; } }
         canvas.width = w; canvas.height = h; 
@@ -1166,7 +1187,7 @@ const App = () => {
         setStatusMsg({ text: 'Logo Terpasang!', type: 'success' }); 
     }
     setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
-    e.target.value = '';
+    e.target.value = ''; // Safely clear value
   };
 
   const removeLogo = (idx) => { 
@@ -1238,7 +1259,7 @@ const App = () => {
         setTimeout(() => setStatusMsg({ text: '', type: '' }), 3000); 
       }
     };
-    reader.readAsText(file); e.target.value = '';
+    reader.readAsText(file); e.target.value = ''; // Safely clear value
   };
 
   const executePendingAction = async () => {
@@ -1850,7 +1871,7 @@ const App = () => {
                           <Upload size={14} className="mb-0.5 pointer-events-none" />
                           <span className="text-[7px] font-black uppercase pointer-events-none">Slot {idx+1}</span>
                         </label>
-                        <input id={`logo-upload-${idx}`} type="file" accept="image/jpeg, image/png, image/jpg, image/webp" className="hidden" onChange={(e) => handleLogoUpload(idx, e)} onClick={(e) => { e.target.value = ''; }} />
+                        <input id={`logo-upload-${idx}`} type="file" accept="image/*" className="w-px h-px opacity-0 absolute overflow-hidden -z-10" onChange={(e) => handleLogoUpload(idx, e)} />
                       </>
                     )}
                   </div>
@@ -1915,11 +1936,7 @@ const App = () => {
                  <button onClick={executeDeleteAllPhotos} className="flex-1 lg:flex-none bg-amber-500 hover:bg-amber-600 text-white px-4 sm:px-6 py-3.5 sm:py-4 rounded-2xl text-[9px] sm:text-[10px] font-black uppercase transition-all shadow-md">
                    Kosongkan
                  </button>
-                 <button onClick={() => setPagesData(prev => {
-                   const n = {...prev}; 
-                   n[reportType] = [...(n[reportType] || []), createNewPage()]; 
-                   return n;
-                 })} className="flex-1 lg:flex-none bg-blue-600 hover:bg-blue-700 text-white px-4 sm:px-6 py-3.5 sm:py-4 rounded-2xl text-[9px] sm:text-[10px] font-black uppercase transition-all shadow-md flex justify-center items-center gap-2">
+                 <button onClick={handleAddPage} className="flex-1 lg:flex-none bg-blue-600 hover:bg-blue-700 text-white px-4 sm:px-6 py-3.5 sm:py-4 rounded-2xl text-[9px] sm:text-[10px] font-black uppercase transition-all shadow-md flex justify-center items-center gap-2">
                    <Plus size={16} className="hidden sm:block" /> + Halaman
                  </button>
                  
@@ -1927,8 +1944,7 @@ const App = () => {
                    <Upload size={16} className="pointer-events-none hidden sm:block"/> Mega Upload
                  </label>
                  
-                 {/* PERBAIKAN: e.target.value diubah menjadi string kosong agar tidak memicu DOM Exception */}
-                 <input id="mega-upload-input" type="file" multiple accept="image/jpeg, image/png, image/jpg, image/webp" className="hidden" onChange={handleMegaUpload} onClick={(e) => { e.target.value = ''; }} />
+                 <input id="mega-upload-input" type="file" multiple accept="image/*" className="w-px h-px opacity-0 absolute overflow-hidden -z-10" onChange={handleMegaUpload} />
                </div>
             </div>
           </section>
