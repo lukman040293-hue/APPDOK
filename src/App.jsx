@@ -128,13 +128,11 @@ const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleF
             <label htmlFor={camId} className={`w-full text-white py-3 sm:py-4 rounded-2xl sm:rounded-3xl text-[10px] font-black uppercase cursor-pointer flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all ${reportType === 'progres' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-blue-600 hover:bg-blue-500'}`}>
               <Camera size={18} className="sm:w-5 sm:h-5 pointer-events-none"/> AMBIL KAMERA
             </label>
-            {/* PERBAIKAN: Hapus onClick event yang menyebabkan crash di Android WebView */}
             <input id={camId} type="file" accept="image/*" capture="environment" className="w-px h-px opacity-0 absolute overflow-hidden -z-10" onChange={handleFileUpload} />
             
             <label htmlFor={galId} className="w-full cursor-pointer bg-slate-100 text-slate-500 py-3 sm:py-3.5 rounded-2xl sm:rounded-3xl text-[10px] font-black uppercase flex items-center justify-center gap-2 active:scale-95 hover:bg-slate-200 transition-all">
               <ImageIcon size={16} className="sm:w-4 sm:h-4 pointer-events-none"/> PILIH GALERI
             </label>
-            {/* PERBAIKAN: Format gambar eksplisit agar galeri memunculkan foto, tanpa onClick event */}
             <input id={galId} type="file" accept="image/jpeg, image/png, image/jpg, image/webp" className="w-px h-px opacity-0 absolute overflow-hidden -z-10" onChange={handleFileUpload} />
           </div>
         )}
@@ -1014,41 +1012,55 @@ const App = () => {
     });
   };
 
-  // PERBAIKAN KRUSIAL: Membuang FileReader dan URL Object yang bermasalah di WebView
-  // Kembali menggunakan FileReader murni yang aman dan stabil untuk WebView
+  // PERBAIKAN KRUSIAL: Membaca dengan Object URL murni (Anti RAM Penuh), 
+  // Ditambah Fallback FileReader yang input-nya hanya dihapus di akhir agar tidak terputus.
   const handleFileUpload = async (pIdx, sIdx, e) => {
     const file = e.target.files?.[0]; 
     if (!file) return;
     
     setStatusMsg({ text: 'Mengolah Foto...', type: 'info' });
     
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-        try {
-            const optimized = await processInitialUpload(ev.target.result);
-            if (optimized) {
-              updateSpecificPhoto(pIdx, sIdx, 'src', optimized);
-              setStatusMsg({ text: 'Siap!', type: 'success' });
-            } else {
-              setStatusMsg({ text: 'Gagal olah foto', type: 'error' });
-            }
-        } catch (err) {
-            setStatusMsg({ text: 'Memori HP Penuh', type: 'error' });
+    try {
+        // Coba jalur paling hemat RAM (Object URL)
+        let objectUrl = URL.createObjectURL(file);
+        let optimized = await processInitialUpload(objectUrl);
+        URL.revokeObjectURL(objectUrl);
+
+        // Jika WebView menolak Object URL (misal: di Android lama), putar ke jalur klasik
+        if (!optimized) {
+             optimized = await new Promise((resolve) => {
+                 const reader = new FileReader();
+                 reader.onload = async (ev) => {
+                     const res = await processInitialUpload(ev.target.result);
+                     resolve(res);
+                 };
+                 reader.onerror = () => resolve(null);
+                 reader.readAsDataURL(file);
+             });
         }
-        setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
-    };
-    reader.onerror = () => {
-        setStatusMsg({ text: 'Gagal membaca file', type: 'error' });
-        setTimeout(() => setStatusMsg({ text: '', type: '' }), 3000);
-    };
-    reader.readAsDataURL(file);
-    e.target.value = ''; // Membersihkan dengan aman di akhir
+
+        if (optimized) {
+          updateSpecificPhoto(pIdx, sIdx, 'src', optimized);
+          setStatusMsg({ text: 'Siap!', type: 'success' });
+        } else {
+          setStatusMsg({ text: 'Gagal membaca gambar', type: 'error' });
+        }
+    } catch (err) {
+        setStatusMsg({ text: 'Memori HP Penuh', type: 'error' });
+    }
+    
+    // PERBAIKAN: Input HANYA dibersihkan SETELAH semua proses membaca tuntas agar sistem tidak crash
+    e.target.value = ''; 
+    setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
   };
 
-  // PERBAIKAN BUG MEGA UPLOAD: Menggunakan promise berurutan dan format file yang jelas
+  // PERBAIKAN BUG MEGA UPLOAD: Menggunakan struktur Promise Dual-Engine
   const handleMegaUpload = async (e) => {
     const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
-    if (files.length === 0) return;
+    if (files.length === 0) {
+        e.target.value = '';
+        return;
+    }
     
     const curIdx = currentPage - 1; 
     const currentData = latestDataRef.current.pagesData;
@@ -1069,22 +1081,33 @@ const App = () => {
     const limit = Math.min(files.length, emptySlots.length);
     setStatusMsg({ text: `Proses ${limit} foto...`, type: 'info' });
     
-    // Proses satu persatu agar HP Android tidak Crash karena kehabisan RAM
+    // Proses satu persatu (berurutan) agar tidak Crash Memory
     const processFiles = async () => {
       for (let i = 0; i < limit; i++) {
         const file = files[i];
-        await new Promise((resolve) => {
-           const reader = new FileReader();
-           reader.onload = async (ev) => {
-              const cropped = await processInitialUpload(ev.target.result);
-              if (cropped) {
-                  newPageRef[emptySlots[i]] = { ...(newPageRef[emptySlots[i]] || {}), src: cropped, brightness: 100, saturation: 100, zoom: 100, panX: 50, panY: 50 };
-              }
-              resolve();
-           };
-           reader.onerror = () => resolve();
-           reader.readAsDataURL(file);
-        });
+        try {
+            let objectUrl = URL.createObjectURL(file);
+            let cropped = await processInitialUpload(objectUrl);
+            URL.revokeObjectURL(objectUrl);
+            
+            if (!cropped) {
+                cropped = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = async (ev) => {
+                        const res = await processInitialUpload(ev.target.result);
+                        resolve(res);
+                    };
+                    reader.onerror = () => resolve(null);
+                    reader.readAsDataURL(file);
+                });
+            }
+
+            if (cropped) {
+                newPageRef[emptySlots[i]] = { ...(newPageRef[emptySlots[i]] || {}), src: cropped, brightness: 100, saturation: 100, zoom: 100, panX: 50, panY: 50 };
+            }
+        } catch (err) {
+            console.error("Gagal mengolah file mega upload", err);
+        }
       }
       
       setPagesData(p => {
@@ -1097,10 +1120,12 @@ const App = () => {
       
       setStatusMsg({ text: 'Selesai!', type: 'success' }); 
       setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
+      
+      // PERBAIKAN: Pembersih Input hanya dieksekusi SETELAH tuntas semua gambar
+      e.target.value = ''; 
     };
     
     processFiles();
-    e.target.value = ''; 
   };
 
   const updateSpecificPhoto = (pIdx, sIdx, key, val) => {
@@ -1203,10 +1228,13 @@ const App = () => {
         } else {
             setStatusMsg({ text: 'Gagal diproses', type: 'error' });
         }
+        e.target.value = ''; // Safely clear value after completion
         setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
     };
+    reader.onerror = () => {
+        e.target.value = '';
+    };
     reader.readAsDataURL(file);
-    e.target.value = ''; 
   };
 
   const removeLogo = (idx) => { 
@@ -1244,6 +1272,7 @@ const App = () => {
         if (!data.docufield_mentahan) {
             setStatusMsg({ text: 'Format file tidak dikenali!', type: 'error' });
             setTimeout(() => setStatusMsg({ text: '', type: '' }), 2500);
+            e.target.value = ''; 
             return;
         }
 
@@ -1277,8 +1306,12 @@ const App = () => {
         setStatusMsg({ text: 'Gagal / File Rusak', type: 'error' }); 
         setTimeout(() => setStatusMsg({ text: '', type: '' }), 3000); 
       }
+      e.target.value = ''; // Safely clear value
     };
-    reader.readAsText(file); e.target.value = ''; 
+    reader.onerror = () => {
+        e.target.value = '';
+    };
+    reader.readAsText(file); 
   };
 
   const executePendingAction = async () => {
@@ -1691,7 +1724,7 @@ const App = () => {
       <header className="bg-slate-900 text-white p-3 sm:p-4 sticky top-0 z-50 flex flex-col sm:flex-row gap-3 sm:gap-4 items-center justify-between shadow-2xl border-b border-white/5">
         <div className="flex items-center justify-between w-full sm:w-auto">
           <div className="flex items-center gap-2.5">
-            <Cloud size={22} className={reportType === 'progres' ? 'text-emerald-400' : 'text-blue-400'}/>
+            <Cloud size={22} className={reportType === 'progres' ? 'text emerald-400' : 'text-blue-400'}/>
             <h1 className="font-black text-sm uppercase tracking-[0.2em]">Aplikasi Dokumentasi</h1>
           </div>
           <div className="flex items-center gap-2 text-[9px] sm:text-[10px] uppercase font-black tracking-widest sm:ml-4">
