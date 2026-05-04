@@ -128,14 +128,14 @@ const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleF
             <label htmlFor={camId} className={`w-full text-white py-3 sm:py-4 rounded-2xl sm:rounded-3xl text-[10px] font-black uppercase cursor-pointer flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all ${reportType === 'progres' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-blue-600 hover:bg-blue-500'}`}>
               <Camera size={18} className="sm:w-5 sm:h-5 pointer-events-none"/> AMBIL KAMERA
             </label>
-            {/* Dikembalikan ke hidden murni agar stabil di berbagai versi WebView */}
-            <input id={camId} type="file" accept="image/jpeg, image/png, image/webp" capture="environment" className="hidden" onChange={handleFileUpload} />
+            {/* Kamera dibiarkan image/* agar Intent Kamera langsung terbuka */}
+            <input id={camId} type="file" accept="image/*" capture="environment" className="w-px h-px opacity-0 absolute overflow-hidden -z-10" onChange={handleFileUpload} onClick={(e) => { e.target.value = ''; }} />
             
             <label htmlFor={galId} className="w-full cursor-pointer bg-slate-100 text-slate-500 py-3 sm:py-3.5 rounded-2xl sm:rounded-3xl text-[10px] font-black uppercase flex items-center justify-center gap-2 active:scale-95 hover:bg-slate-200 transition-all">
               <ImageIcon size={16} className="sm:w-4 sm:h-4 pointer-events-none"/> PILIH GALERI
             </label>
-            {/* Dikembalikan ke hidden murni agar stabil di berbagai versi WebView */}
-            <input id={galId} type="file" accept="image/jpeg, image/png, image/webp" className="hidden" onChange={handleFileUpload} />
+            {/* Menggunakan mimetype spesifik dan transparan untuk WebView */}
+            <input id={galId} type="file" accept="image/jpeg, image/png, image/webp" className="w-px h-px opacity-0 absolute overflow-hidden -z-10" onChange={handleFileUpload} onClick={(e) => { e.target.value = ''; }} />
           </div>
         )}
         
@@ -1923,7 +1923,7 @@ const App = () => {
                           <Upload size={14} className="mb-0.5 pointer-events-none" />
                           <span className="text-[7px] font-black uppercase pointer-events-none">Slot {idx+1}</span>
                         </label>
-                        <input id={`logo-upload-${idx}`} type="file" accept="image/jpeg, image/png, image/jpg, image/webp" className="hidden" onChange={(e) => handleLogoUpload(idx, e)} />
+                        <input id={`logo-upload-${idx}`} type="file" accept="image/jpeg, image/png, image/jpg, image/webp" className="w-px h-px opacity-0 absolute overflow-hidden -z-10" onChange={(e) => handleLogoUpload(idx, e)} />
                       </>
                     )}
                   </div>
@@ -1996,7 +1996,7 @@ const App = () => {
                    <Upload size={16} className="pointer-events-none hidden sm:block"/> Mega Upload
                  </label>
                  
-                 <input id="mega-upload-input" type="file" multiple accept="image/*" className="hidden" onChange={handleMegaUpload} />
+                 <input id="mega-upload-input" type="file" multiple={true} accept="image/jpeg, image/png, image/webp" className="w-px h-px opacity-0 absolute overflow-hidden -z-10" onChange={handleMegaUpload} />
                </div>
             </div>
           </section>
