@@ -122,13 +122,11 @@ const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleF
             <label htmlFor={camId} className={`w-full text-white py-3 sm:py-4 rounded-2xl sm:rounded-3xl text-[10px] font-black uppercase cursor-pointer flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all ${reportType === 'progres' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-blue-600 hover:bg-blue-500'}`}>
               <Camera size={18} className="sm:w-5 sm:h-5 pointer-events-none"/> AMBIL KAMERA
             </label>
-            {/* PERBAIKAN: e.target.value diubah menjadi string kosong agar tidak memicu DOM Exception */}
             <input id={camId} type="file" accept="image/jpeg, image/png, image/jpg, image/webp" capture="environment" className="hidden" onChange={handleFileUpload} onClick={(e) => { e.target.value = ''; }} />
             
             <label htmlFor={galId} className="w-full cursor-pointer bg-slate-100 text-slate-500 py-3 sm:py-3.5 rounded-2xl sm:rounded-3xl text-[10px] font-black uppercase flex items-center justify-center gap-2 active:scale-95 hover:bg-slate-200 transition-all">
               <ImageIcon size={16} className="sm:w-4 sm:h-4 pointer-events-none"/> PILIH GALERI
             </label>
-            {/* PERBAIKAN: e.target.value diubah menjadi string kosong agar tidak memicu DOM Exception */}
             <input id={galId} type="file" accept="image/jpeg, image/png, image/jpg, image/webp" className="hidden" onChange={handleFileUpload} onClick={(e) => { e.target.value = ''; }} />
           </div>
         )}
@@ -725,23 +723,25 @@ const App = () => {
     }
   };
 
+  // --- PERBAIKAN: REALTIME AUTO-SAVE (MENGGANTIKAN INTERVAL 30 DETIK) ---
   useEffect(() => {
     if (!user || !activeProjectId || view === 'dashboard' || isOfflineMode) return;
     
-    const interval = setInterval(() => {
-      if (isSavingRef.current) return; 
-      
-      const currentData = latestDataRef.current;
-      if (!isProjectEmpty(currentData.reportInfo, currentData.pagesData)) {
-          if (checkHasChanges(activeProjectId, currentData.reportInfo, currentData.pagesData)) {
-              const isOwner = activeEmail === projectAuthor;
-              saveToCloudNow(activeProjectId, currentData.reportInfo, currentData.pagesData, currentData.reportType, projectAuthor, isOwner ? Date.now() : projectTime);
-          }
-      }
-    }, 30000); 
+    const currentData = latestDataRef.current;
+    if (isProjectEmpty(currentData.reportInfo, currentData.pagesData)) return;
 
-    return () => clearInterval(interval);
-  }, [activeProjectId, user, view, activeEmail, projectAuthor, projectTime, isOfflineMode]);
+    if (checkHasChanges(activeProjectId, currentData.reportInfo, currentData.pagesData)) {
+        // Jika mendeteksi perubahan (ngetik/upload), tunggu 2.5 detik lalu kirim diam-diam
+        const timer = setTimeout(() => {
+            if (!isSavingRef.current) {
+               const isOwner = activeEmail === projectAuthor;
+               saveToCloudNow(activeProjectId, currentData.reportInfo, currentData.pagesData, currentData.reportType, projectAuthor, isOwner ? Date.now() : projectTime);
+            }
+        }, 2500); 
+
+        return () => clearTimeout(timer);
+    }
+  }, [reportInfo, pagesData, activeProjectId, user, view, activeEmail, projectAuthor, projectTime, isOfflineMode]);
 
   const saveCurrentProject = async () => {
     if (activeProjectId) {
@@ -973,12 +973,14 @@ const App = () => {
     }
   }, [view]);
 
+  // PERBAIKAN: Kompresi cerdas untuk mengamankan limit 1MB Firebase
+  // Kualitas disesuaikan ke 65% dengan maks 800px. Sangat tajam untuk PDF, sangat kecil ukurannya di cloud.
   const processInitialUpload = (dataUrl) => {
     return new Promise((r) => {
       const img = new Image(); img.src = dataUrl;
       img.onload = () => {
         const canvas = document.createElement('canvas'); 
-        const max = 1080; 
+        const max = 800; 
         let w = img.width, h = img.height;
         if (w > max || h > max) { if (w > h) { h = Math.round((max / w) * h); w = max; } else { w = Math.round((max / h) * w); h = max; } }
         canvas.width = w; canvas.height = h; 
@@ -986,10 +988,10 @@ const App = () => {
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, 0, 0, w, h);
-        r(canvas.toDataURL('image/jpeg', 0.82)); 
+        r(canvas.toDataURL('image/jpeg', 0.65)); 
       };
       img.onerror = () => {
-          setStatusMsg({ text: 'Gambar tidak terbaca WebView', type: 'error' });
+          setStatusMsg({ text: 'Gambar rusak / gagal dibaca', type: 'error' });
           setTimeout(() => setStatusMsg({ text: '', type: '' }), 3000);
           r(null);
       };
@@ -1017,12 +1019,13 @@ const App = () => {
       setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
     };
     reader.onerror = () => {
-        setStatusMsg({ text: 'WebView menolak akses file', type: 'error' });
+        setStatusMsg({ text: 'Web menolak akses file', type: 'error' });
         setTimeout(() => setStatusMsg({ text: '', type: '' }), 3000);
     };
     reader.readAsDataURL(file);
   };
 
+  // PERBAIKAN: Penyelesaian Bug 'is not iterable' di MegaUpload
   const handleMegaUpload = async (e) => {
     const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
     if (files.length === 0) return;
@@ -1030,9 +1033,10 @@ const App = () => {
     const curIdx = currentPage - 1; 
     const currentData = latestDataRef.current.pagesData;
     
-    // PERBAIKAN BUG: Validasi ekstra agar newPageRef pasti sebuah array (mencegah is not iterable crash)
-    let newPageRef = Array.isArray(currentData[reportType]?.[curIdx]) 
-        ? [...currentData[reportType][curIdx]] 
+    // Perbaikan bug: Ambil Array dengan aman, jika belum ada buatkan 1 Set Array baru
+    const currentPageArray = currentData[reportType]?.[curIdx];
+    let newPageRef = Array.isArray(currentPageArray) 
+        ? [...currentPageArray] 
         : createNewPage();
     
     const emptySlots = []; newPageRef.forEach((s, i) => { if (!s?.src) emptySlots.push(i); });
@@ -1057,7 +1061,7 @@ const App = () => {
       }
       setPagesData(p => {
         const n2 = {...p};
-        const cPages = [...n2[reportType]];
+        const cPages = [...(n2[reportType] || [])];
         cPages[curIdx] = newPageRef;
         n2[reportType] = cPages;
         return n2;
@@ -1129,12 +1133,13 @@ const App = () => {
     setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
   };
 
+  // PERBAIKAN: Kompresi Logo diturunkan ke maks 800px agar dokumen Firebase tidak kepenuhan!
   const processLogoUpload = (dataUrl) => {
     return new Promise((r) => {
       const img = new Image(); img.src = dataUrl;
       img.onload = () => {
         const canvas = document.createElement('canvas'); 
-        const max = 2400; 
+        const max = 800; // Aman untuk Firestore & sangat jernih untuk PDF
         let w = img.width, h = img.height;
         if (w > max || h > max) { if (w > h) { h = Math.round((max / w) * h); w = max; } else { w = Math.round((max / h) * w); h = max; } }
         canvas.width = w; canvas.height = h; 
