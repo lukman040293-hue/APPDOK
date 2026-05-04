@@ -971,12 +971,14 @@ const App = () => {
     }
   }, [view]);
 
+  // PERBAIKAN: Turunkan resolusi foto mentah (max 800px) agar file tidak terlalu besar
+  // Ini menghindari error batas limit 1 MB dokumen Firestore di Firebase.
   const processInitialUpload = (dataUrl) => {
     return new Promise((r) => {
       const img = new Image(); img.src = dataUrl;
       img.onload = () => {
         const canvas = document.createElement('canvas'); 
-        const max = 1024; 
+        const max = 800; 
         let w = img.width, h = img.height;
         if (w > max || h > max) { if (w > h) { h = Math.round((max / w) * h); w = max; } else { w = Math.round((max / h) * w); h = max; } }
         canvas.width = w; canvas.height = h; 
@@ -984,7 +986,7 @@ const App = () => {
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'medium';
         ctx.drawImage(img, 0, 0, w, h);
-        r(canvas.toDataURL('image/jpeg', 0.85)); 
+        r(canvas.toDataURL('image/jpeg', 0.75)); 
       };
       img.onerror = () => r(null);
     });
@@ -1008,42 +1010,45 @@ const App = () => {
     e.target.value = '';
   };
 
+  // PERBAIKAN: MegaUpload sekarang membaca memori dengan benar tanpa terjebak di state React
   const handleMegaUpload = async (e) => {
     const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
     if (files.length === 0) return;
-    const curIdx = currentPage - 1; 
     
-    setPagesData(prev => {
-      const n = { ...prev };
-      const currentPages = [...n[reportType]];
-      let newPageRef = currentPages[curIdx] ? [...currentPages[curIdx]] : createNewPage();
-      
-      const emptySlots = []; newPageRef.forEach((s, i) => { if (!s?.src) emptySlots.push(i); });
-      if (emptySlots.length === 0) { setStatusMsg({ text: 'Penuh!', type: 'error' }); setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000); return n; }
-      
-      const limit = Math.min(files.length, emptySlots.length);
-      setStatusMsg({ text: `Proses ${limit} foto...`, type: 'info' });
-      
-      const processFiles = async () => {
-        for (let i = 0; i < limit; i++) {
-          const objectUrl = URL.createObjectURL(files[i]);
-          const cropped = await processInitialUpload(objectUrl);
-          URL.revokeObjectURL(objectUrl);
-          if (cropped) newPageRef[emptySlots[i]] = { ...(newPageRef[emptySlots[i]] || {}), src: cropped, brightness: 100, saturation: 100, zoom: 100, panX: 50, panY: 50 };
+    const curIdx = currentPage - 1; 
+    const currentData = latestDataRef.current.pagesData;
+    let newPageRef = currentData[reportType][curIdx] ? [...currentData[reportType][curIdx]] : createNewPage();
+    
+    const emptySlots = []; newPageRef.forEach((s, i) => { if (!s?.src) emptySlots.push(i); });
+    
+    if (emptySlots.length === 0) { 
+        setStatusMsg({ text: 'Penuh!', type: 'error' }); 
+        setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000); 
+        return; 
+    }
+    
+    const limit = Math.min(files.length, emptySlots.length);
+    setStatusMsg({ text: `Proses ${limit} foto...`, type: 'info' });
+    
+    for (let i = 0; i < limit; i++) {
+        const objectUrl = URL.createObjectURL(files[i]);
+        const cropped = await processInitialUpload(objectUrl);
+        URL.revokeObjectURL(objectUrl);
+        if (cropped) {
+            newPageRef[emptySlots[i]] = { ...(newPageRef[emptySlots[i]] || {}), src: cropped, brightness: 100, saturation: 100, zoom: 100, panX: 50, panY: 50 };
         }
-        setPagesData(p => {
-          const n2 = {...p};
-          const cPages = [...n2[reportType]];
-          cPages[curIdx] = newPageRef;
-          n2[reportType] = cPages;
-          return n2;
-        });
-        setStatusMsg({ text: 'Selesai!', type: 'success' }); setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
-      };
-      processFiles();
-      
-      return n;
+    }
+
+    setPagesData(p => {
+        const n2 = {...p};
+        const cPages = [...n2[reportType]];
+        cPages[curIdx] = newPageRef;
+        n2[reportType] = cPages;
+        return n2;
     });
+
+    setStatusMsg({ text: 'Selesai!', type: 'success' }); 
+    setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
     
     e.target.value = '';
   };
@@ -1212,13 +1217,28 @@ const App = () => {
     reader.readAsText(file); e.target.value = '';
   };
 
-  const executePendingAction = () => {
+  // PERBAIKAN: Dibuat async agar tidak unmount sebelum sempat menyetor data ke cloud
+  const executePendingAction = async () => {
     setShowReminderModal(false);
     if (pendingAction === 'dashboard') {
+      setStatusMsg({ text: 'Menyimpan & Kembali...', type: 'info' });
+      if (activeProjectId && !isOfflineMode) {
+        const currentData = latestDataRef.current;
+        if (!isProjectEmpty(currentData.reportInfo, currentData.pagesData)) {
+            if (checkHasChanges(activeProjectId, currentData.reportInfo, currentData.pagesData)) {
+                const isOwner = activeEmail === projectAuthor;
+                const timeToSave = isOwner ? Date.now() : projectTime;
+                await saveToCloudNow(activeProjectId, currentData.reportInfo, currentData.pagesData, currentData.reportType, projectAuthor, timeToSave); 
+            }
+        }
+      }
       setView('dashboard'); 
       setPagesData({ umum: [createNewPage()], progres: [createNewPage()] }); 
       setBakedPages(null); setActiveProjectId(null); 
-    } else if (pendingAction === 'logout') handleLogout();
+      setTimeout(() => setStatusMsg({ text: '', type: '' }), 1000);
+    } else if (pendingAction === 'logout') {
+        handleLogout();
+    }
     setPendingAction(null);
   };
 
