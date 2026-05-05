@@ -812,8 +812,10 @@ const App = () => {
     if (checkHasChanges(activeProjectId, currentData.reportInfo, currentData.pagesData)) {
         const timer = setTimeout(() => {
             if (!isSavingRef.current) {
-               const isOwner = activeEmail === projectAuthor;
-               saveToCloudNow(activeProjectId, currentData.reportInfo, currentData.pagesData, currentData.reportType, projectAuthor, isOwner ? Date.now() : projectTime);
+               // PERBAIKAN: Jika projectAuthor kosong (Anonim), paksa gunakan activeEmail
+               const finalAuthor = projectAuthor || activeEmail;
+               const isOwner = activeEmail === finalAuthor;
+               saveToCloudNow(activeProjectId, currentData.reportInfo, currentData.pagesData, currentData.reportType, finalAuthor, isOwner ? Date.now() : projectTime);
             }
         }, 2500); 
 
@@ -835,10 +837,12 @@ const App = () => {
           return;
       }
 
-      const isOwner = activeEmail === projectAuthor;
+      // PERBAIKAN: Jika projectAuthor kosong (Anonim), paksa gunakan activeEmail
+      const finalAuthor = projectAuthor || activeEmail;
+      const isOwner = activeEmail === finalAuthor;
       setStatusMsg({ text: 'Menyinkronkan...', type: 'info' });
       
-      const success = await saveToCloudNow(activeProjectId, reportInfo, pagesData, reportType, projectAuthor, isOwner ? Date.now() : projectTime);
+      const success = await saveToCloudNow(activeProjectId, reportInfo, pagesData, reportType, finalAuthor, isOwner ? Date.now() : projectTime);
       
       if (success) {
           setStatusMsg({ text: 'Tersimpan!', type: 'success' });
@@ -1400,10 +1404,13 @@ const App = () => {
         
         setReportInfo(loadedInfo); setReportType(data.reportType || 'umum'); 
         setPagesData({
-          umum: (data.pagesData?.umum && Array.isArray(data.pagesData.umum)) ? data.pagesData.umum : [createNewPage()],
-          progres: (data.pagesData?.progres && Array.isArray(data.pagesData.progres)) ? data.pagesData.progres : [createNewPage()]
+          umum: (data.pagesData?.umum && Array.isArray(data.pagesData.umum)) ? data.pagesData.umum : [createNewPage()[0]],
+          progres: (data.pagesData?.progres && Array.isArray(data.pagesData.progres)) ? data.pagesData.progres : [createNewPage()[0]]
         });
         setCurrentPage(1); setView('edit');
+        
+        // PERBAIKAN: Tempelkan email user yang sedang aktif sebagai pembuat Mentahan ini
+        setProjectAuthor(activeEmail);
         
         setStatusMsg({ text: 'Berhasil Dibuka!', type: 'success' });
         setTimeout(() => setStatusMsg({ text: '', type: '' }), 1500);
