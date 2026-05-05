@@ -853,7 +853,7 @@ const App = () => {
   const createNewProject = async () => {
     const newId = `proj_${Date.now()}`;
     const newInfo = {...defaultReportInfo, title: 'LAPORAN DOKUMENTASI LAPANGAN'};
-    const newPages = { umum: [createNewPage()[0]], progres: [createNewPage()[0]] };
+    const newPages = { umum: [createNewPage()], progres: [createNewPage()] };
     const now = Date.now();
     
     isNewlyCreatedRef.current = true; 
@@ -960,10 +960,10 @@ const App = () => {
                       else if (oldSnap.exists()) {
                           return oldSnap.data().data;
                       } else {
-                          return createNewPage()[0];
+                          return createNewPage();
                       }
                   } catch (e) {
-                      return createNewPage()[0];
+                      return createNewPage();
                   }
               })());
           }
@@ -985,8 +985,8 @@ const App = () => {
       lastSavedHashRef.current.progresLength = loadedProgres.length;
 
       setPagesData({ 
-        umum: loadedUmum.length > 0 ? loadedUmum : [createNewPage()[0]], 
-        progres: loadedProgres.length > 0 ? loadedProgres : [createNewPage()[0]] 
+        umum: loadedUmum.length > 0 ? loadedUmum : [createNewPage()], 
+        progres: loadedProgres.length > 0 ? loadedProgres : [createNewPage()] 
       });
       setSaveStatus('saved');
       setStatusMsg({ text: '', type: '' });
@@ -1271,7 +1271,7 @@ const App = () => {
     setPagesData(prev => { 
         const n = {...prev}; 
         const cPages = [...safeArray(n[reportType])];
-        cPages[currentPage - 1] = createNewPage()[0];
+        cPages[currentPage - 1] = createNewPage();
         n[reportType] = cPages;
         return n; 
     });
@@ -1283,7 +1283,7 @@ const App = () => {
     if (pages.length >= 50) { setStatusMsg({ text: 'Maksimal 50 Halaman!', type: 'error' }); setTimeout(() => setStatusMsg({ text: '', type: '' }), 3000); return; }
     setPagesData(prev => {
         const n = {...prev};
-        n[reportType] = [...safeArray(n[reportType]), createNewPage()[0]];
+        n[reportType] = [...safeArray(n[reportType]), createNewPage()];
         return n;
     });
     setCurrentPage(pages.length + 1);
@@ -1400,8 +1400,8 @@ const App = () => {
         
         setReportInfo(loadedInfo); setReportType(data.reportType || 'umum'); 
         setPagesData({
-          umum: (data.pagesData?.umum && Array.isArray(data.pagesData.umum)) ? data.pagesData.umum : [createNewPage()[0]],
-          progres: (data.pagesData?.progres && Array.isArray(data.pagesData.progres)) ? data.pagesData.progres : [createNewPage()[0]]
+          umum: (data.pagesData?.umum && Array.isArray(data.pagesData.umum)) ? data.pagesData.umum : [createNewPage()],
+          progres: (data.pagesData?.progres && Array.isArray(data.pagesData.progres)) ? data.pagesData.progres : [createNewPage()]
         });
         setCurrentPage(1); setView('edit');
         
@@ -1438,7 +1438,7 @@ const App = () => {
         }
       }
       setView('dashboard'); 
-      setPagesData({ umum: [createNewPage()[0]], progres: [createNewPage()[0]] }); 
+      setPagesData({ umum: [createNewPage()], progres: [createNewPage()] }); 
       setBakedPages(null); setActiveProjectId(null); 
       setTimeout(() => setStatusMsg({ text: '', type: '' }), 1000);
     } else if (pendingAction === 'logout') {
@@ -1476,7 +1476,7 @@ const App = () => {
   };
 
   const triggerPdfBaking = async (action = 'download') => {
-    if (!isLibraryReady.pdf && action === 'share') return; 
+    if (!isLibraryReady.pdf && action === 'share') return; // Library hanya wajib untuk share
     setPdfAction(action);
     setIsPdfLoading(true); 
     setStatusMsg({ text: action === 'share' ? 'Menyiapkan File...' : 'Menyiapkan Data Cetak...', type: 'info' });
@@ -1515,6 +1515,7 @@ const App = () => {
         try { 
             window.scrollTo(0, 0); 
             
+            // PERBAIKAN: LOGIKA SHARE WA CERDAS
             if (pdfAction === 'share') {
                 const totalPages = (bakedPages || pages).length;
                 const maxPixels = 12000000;
@@ -1534,6 +1535,7 @@ const App = () => {
                 const pdfBlob = await window.html2pdf().set(options).from(element).output('blob');
                 const file = new File([pdfBlob], `${cleanTitle}.pdf`, { type: 'application/pdf' });
                 
+                // Jika Browser mendukung Share File NATIVE (Kirim Langsung)
                 if (navigator.canShare && navigator.canShare({ files: [file] })) {
                     try {
                         await navigator.share({
@@ -1546,9 +1548,13 @@ const App = () => {
                         setStatusMsg({ text: 'Batal Dibagikan', type: 'info' });
                     }
                 } else {
+                    // FALLBACK WHATSAPP: Jika Browser memblokir pengiriman file langsung
                     setStatusMsg({ text: 'Download & Buka WA...', type: 'info' });
+                    
+                    // 1. Download file-nya dulu ke memori HP
                     await window.html2pdf().set(options).from(element).save();
                     
+                    // 2. Arahkan ke WhatsApp
                     setTimeout(() => {
                         setStatusMsg({ text: 'Silakan lampirkan PDF di WA!', type: 'success' });
                         const waText = encodeURIComponent(`Berikut adalah ${reportInfo.title || 'Laporan Dokumentasi Lapangan'}. \n\n*(Catatan: File PDF telah diunduh ke HP saya, saya akan melampirkannya di bawah ini)*`);
@@ -1561,7 +1567,9 @@ const App = () => {
                 setShouldTriggerDownload(false); 
                 setTimeout(() => setStatusMsg({ text: '', type: '' }), 3000); 
 
-            } else {
+            } 
+            // LOGIKA CETAK PDF NATIVE (Teks Vektor Tajam)
+            else {
                 setStatusMsg({ text: 'Pilih "Simpan sebagai PDF"', type: 'info' });
                 
                 await new Promise((resolve) => {
@@ -1667,7 +1675,7 @@ const App = () => {
 
   const activePageData = useMemo(() => {
      const p = pages[currentPage - 1];
-     return Array.isArray(p) ? p : createNewPage()[0];
+     return Array.isArray(p) ? p : createNewPage();
   }, [pages, currentPage]);
 
   const ReportPage = ({ data, isFinal = false }) => {
