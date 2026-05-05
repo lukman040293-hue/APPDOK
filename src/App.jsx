@@ -6,7 +6,7 @@ import {
   ArrowLeft, Calendar, Briefcase, FileText, Loader2, WifiOff, 
   HardDrive, UploadCloud, Lock, User, LogOut, ZoomIn, ZoomOut, 
   Maximize, Palette, Filter, Save, FileStack, Layers, Activity, 
-  Users, Share2, RotateCcw
+  Users, Share2, RotateCcw, Copy, ClipboardPaste, CheckCheck
 } from 'lucide-react';
 
 // ============================================================================
@@ -102,7 +102,7 @@ const safeArray = (item) => {
 // ============================================================================
 // 3. KOMPONEN KARTU FOTO (EDITOR)
 // ============================================================================
-const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleFileUpload }) => {
+const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleFileUpload, copiedNote, setCopiedNote, pasteToAllNotes }) => {
   const [tab, setTab] = useState('filter');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const { zoom = 100, panX = 50, panY = 50, brightness = 100, saturation = 100, progress = 0 } = p || {};
@@ -116,6 +116,19 @@ const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleF
     updatePhoto('zoom', 100);
     updatePhoto('panX', 50);
     updatePhoto('panY', 50);
+  };
+
+  const copyText = (text) => {
+    const val = text || '';
+    setCopiedNote(val);
+    const textArea = document.createElement("textarea");
+    textArea.value = val;
+    document.body.appendChild(textArea);
+    textArea.select();
+    try {
+      document.execCommand('copy');
+    } catch (err) {}
+    document.body.removeChild(textArea);
   };
 
   return (
@@ -235,13 +248,22 @@ const PhotoCard = ({ pIdx, sIdx, p, reportType, updatePhoto, clearPhoto, handleF
             </div>
           </>
         )}
-        <div className="flex flex-col gap-2">
-          <textarea 
-            value={p?.note || ''} 
-            onChange={e => updatePhoto('note', e.target.value)} 
-            placeholder={reportType === 'progres' ? "Detail progres..." : "Keterangan foto..."} 
-            className="w-full p-4 sm:p-5 bg-slate-50 rounded-2xl sm:rounded-[28px] text-xs sm:text-sm h-24 sm:h-28 resize-none border-2 border-transparent focus:bg-white focus:border-blue-100 transition-all leading-relaxed outline-none shadow-inner" 
-          />
+        
+        <div className="flex flex-col bg-slate-50 rounded-2xl sm:rounded-[28px] border-2 border-transparent focus-within:bg-white focus-within:border-blue-100 transition-all shadow-inner overflow-hidden">
+            <div className="flex items-center justify-between px-4 sm:px-5 py-2 sm:py-3 border-b border-slate-200/60 bg-slate-100/50">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Keterangan</span>
+                <div className="flex items-center gap-1.5">
+                    <button type="button" onClick={() => copyText(p?.note)} className="p-1.5 text-blue-600 bg-white rounded-lg shadow-sm hover:bg-blue-50 active:scale-95 transition-all" title="Copy Text"><Copy size={12}/></button>
+                    <button type="button" onClick={() => updatePhoto('note', copiedNote)} className="p-1.5 text-emerald-600 bg-white rounded-lg shadow-sm hover:bg-emerald-50 active:scale-95 transition-all" title="Paste Text"><ClipboardPaste size={12}/></button>
+                    <button type="button" onClick={() => pasteToAllNotes(p?.note || copiedNote)} className="px-2 py-1.5 text-purple-600 bg-white rounded-lg shadow-sm hover:bg-purple-50 active:scale-95 transition-all flex items-center gap-1" title="Terapkan teks ini ke semua foto di halaman ini"><CheckCheck size={12}/><span className="text-[8px] font-black uppercase">Semua</span></button>
+                </div>
+            </div>
+            <textarea 
+                value={p?.note || ''} 
+                onChange={e => updatePhoto('note', e.target.value)} 
+                placeholder={reportType === 'progres' ? "Detail progres..." : "Keterangan foto..."} 
+                className="w-full p-4 sm:p-5 text-xs sm:text-sm h-20 sm:h-24 resize-none bg-transparent outline-none leading-relaxed" 
+            />
         </div>
       </div>
     </div>
@@ -292,6 +314,7 @@ const App = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [statusMsg, setStatusMsg] = useState({ text: '', type: '' });
   const [isOfflineMode, setIsOfflineMode] = useState(false);
+  const [copiedNote, setCopiedNote] = useState(''); // State untuk fitur Copy Paste
   
   // PDF Generator States
   const [isPdfLoading, setIsPdfLoading] = useState(false);
@@ -1161,6 +1184,28 @@ const App = () => {
       n[reportType] = currentPages; 
       return n;
     });
+  };
+
+  // --- FITUR PASTE KE SEMUA CATATAN DI HALAMAN INI ---
+  const handlePasteToAllNotes = (pageIdx, text) => {
+    setPagesData(prev => {
+      const n = { ...prev };
+      const currentTypePages = safeArray(n[reportType]);
+      if (currentTypePages.length === 0) return prev;
+      const currentPages = [...currentTypePages];
+      if (!currentPages[pageIdx]) return prev;
+      
+      const updatedPageArray = safeArray(currentPages[pageIdx]).map(photo => ({
+          ...photo,
+          note: text || ''
+      }));
+
+      currentPages[pageIdx] = updatedPageArray;
+      n[reportType] = currentPages;
+      return n;
+    });
+    setStatusMsg({ text: 'Diterapkan ke semua!', type: 'success' });
+    setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000);
   };
 
   const clearSpecificPhoto = (pIdx, sIdx) => {
@@ -2069,6 +2114,9 @@ const App = () => {
                 updatePhoto={(k, v) => updateSpecificPhoto(currentPage-1, i, k, v)}
                 clearPhoto={() => clearSpecificPhoto(currentPage-1, i)}
                 handleFileUpload={(e) => handleFileUpload(currentPage-1, i, e)}
+                copiedNote={copiedNote}
+                setCopiedNote={setCopiedNote}
+                pasteToAllNotes={(text) => handlePasteToAllNotes(currentPage - 1, text)}
               />
             ))}
           </section>
