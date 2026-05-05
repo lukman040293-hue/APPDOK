@@ -1995,7 +1995,7 @@ const App = () => {
               </div>
               
               {(reportInfo.customMeta || []).map((meta, idx) => (
-                <div key={meta.id} className={`${idx === 0 ? 'md:col-span-2' : ''} group relative`}>
+                <div key={meta.id} className="md:col-span-2 group relative">
                   <div className="flex items-center justify-between mb-1 ml-2 pr-2">
                     <input type="text" value={meta.label || ''} onChange={e => {
                         const newMeta = [...reportInfo.customMeta]; newMeta[idx].label = e.target.value; setReportInfo({...reportInfo, customMeta: newMeta});
