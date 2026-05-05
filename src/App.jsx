@@ -737,16 +737,23 @@ const App = () => {
 
       const isPageBlank = (pageData) => !pageData || pageData.every(p => !p?.src && (!p?.note || p.note.trim() === ''));
 
+      // PERBAIKAN BATAS 1 MB: Membelah 1 Halaman Menjadi 2 Bagian (Part 1 & Part 2)
       const processPagesToBatch = async (pArr, typeStr, oldLength) => {
           for (let i = 0; i < pArr.length; i++) {
               const currentHash = createPageHash(pArr[i]);
               
               if (lastSavedHashRef.current[`${id}_${typeStr}_${i}`] !== currentHash) {
-                  const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_${typeStr}_page_${i}`);
+                  const pageRef1 = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_${typeStr}_page_${i}_p1`);
+                  const pageRef2 = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_${typeStr}_page_${i}_p2`);
+                  
                   if (isPageBlank(pArr[i])) {
-                      await addToBatch(pageRef, null, true);
+                      await addToBatch(pageRef1, null, true);
+                      await addToBatch(pageRef2, null, true);
                   } else {
-                      await addToBatch(pageRef, { index: i, projectId: id, type: typeStr, data: pArr[i] }, false);
+                      const half1 = pArr[i].slice(0, 3);
+                      const half2 = pArr[i].slice(3, 6);
+                      await addToBatch(pageRef1, { index: i, projectId: id, type: typeStr, data: half1 }, false);
+                      await addToBatch(pageRef2, { index: i, projectId: id, type: typeStr, data: half2 }, false);
                   }
                   lastSavedHashRef.current[`${id}_${typeStr}_${i}`] = currentHash;
               }
@@ -754,8 +761,10 @@ const App = () => {
           
           for (let i = pArr.length; i < oldLength; i++) {
               if (lastSavedHashRef.current[`${id}_${typeStr}_${i}`] !== undefined) {
-                  const pageRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_${typeStr}_page_${i}`);
-                  await addToBatch(pageRef, null, true);
+                  const pageRef1 = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_${typeStr}_page_${i}_p1`);
+                  const pageRef2 = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${id}_${typeStr}_page_${i}_p2`);
+                  await addToBatch(pageRef1, null, true);
+                  await addToBatch(pageRef2, null, true);
                   delete lastSavedHashRef.current[`${id}_${typeStr}_${i}`];
               }
           }
@@ -844,7 +853,7 @@ const App = () => {
   const createNewProject = async () => {
     const newId = `proj_${Date.now()}`;
     const newInfo = {...defaultReportInfo, title: 'LAPORAN DOKUMENTASI LAPANGAN'};
-    const newPages = { umum: [createNewPage()], progres: [createNewPage()] };
+    const newPages = { umum: [createNewPage()[0]], progres: [createNewPage()[0]] };
     const now = Date.now();
     
     isNewlyCreatedRef.current = true; 
@@ -926,35 +935,49 @@ const App = () => {
       setReportType(freshType);
       setView(sessionData?.view || 'edit');
       setCurrentPage(sessionData?.currentPage || 1); 
-      let loadedUmum = []; let loadedProgres = [];
-      const umumPromises = []; const progresPromises = [];
-      for(let i=0; i < (freshProjectData.pageCountUmum || 0); i++) umumPromises.push(getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${project.id}_umum_page_${i}`)));
-      for(let i=0; i < (freshProjectData.pageCountProgres || 0); i++) progresPromises.push(getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${project.id}_progres_page_${i}`)));
-      const [umumSnaps, progresSnaps] = await Promise.all([Promise.all(umumPromises), Promise.all(progresPromises)]);
-      const initialHash = {};
+      
+      const createHalfPage = () => Array(3).fill(null).map(() => ({ id: Date.now() + Math.random(), src: null, note: '', brightness: 100, saturation: 100, progress: 0, zoom: 100, panX: 50, panY: 50 }));
 
-      umumSnaps.forEach((pSnap, idx) => { 
-          if(pSnap.exists()) { 
-              const data = pSnap.data().data; 
-              loadedUmum.push(data); 
-              initialHash[`${project.id}_umum_${idx}`] = createPageHash(data); 
-          } else {
-              const blankPage = createNewPage();
-              loadedUmum.push(blankPage);
-              initialHash[`${project.id}_umum_${idx}`] = createPageHash(blankPage);
+      // PERBAIKAN: Fungsi penarik data Cerdas yang dapat membaca 2 bagian secara utuh
+      const fetchPageData = async (typeStr, pageCount) => {
+          const promises = [];
+          for (let i = 0; i < pageCount; i++) {
+              promises.push((async () => {
+                  const oldRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${project.id}_${typeStr}_page_${i}`);
+                  const p1Ref = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${project.id}_${typeStr}_page_${i}_p1`);
+                  const p2Ref = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${project.id}_${typeStr}_page_${i}_p2`);
+                  
+                  try {
+                      const [oldSnap, p1Snap, p2Snap] = await Promise.all([getDoc(oldRef), getDoc(p1Ref), getDoc(p2Ref)]);
+                      
+                      // Mengutamakan data baru yang sudah di-Split
+                      if (p1Snap.exists() || p2Snap.exists()) {
+                          const d1 = p1Snap.exists() ? p1Snap.data().data : createHalfPage();
+                          const d2 = p2Snap.exists() ? p2Snap.data().data : createHalfPage();
+                          return [...d1, ...d2];
+                      } 
+                      // Mengamankan kompatibilitas laporan format lama
+                      else if (oldSnap.exists()) {
+                          return oldSnap.data().data;
+                      } else {
+                          return createNewPage()[0];
+                      }
+                  } catch (e) {
+                      return createNewPage()[0];
+                  }
+              })());
           }
-      });
-      progresSnaps.forEach((pSnap, idx) => { 
-          if(pSnap.exists()) { 
-              const data = pSnap.data().data; 
-              loadedProgres.push(data); 
-              initialHash[`${project.id}_progres_${idx}`] = createPageHash(data); 
-          } else {
-              const blankPage = createNewPage();
-              loadedProgres.push(blankPage);
-              initialHash[`${project.id}_progres_${idx}`] = createPageHash(blankPage);
-          }
-      });
+          return Promise.all(promises);
+      };
+
+      const [loadedUmum, loadedProgres] = await Promise.all([
+          fetchPageData('umum', freshProjectData.pageCountUmum || 0),
+          fetchPageData('progres', freshProjectData.pageCountProgres || 0)
+      ]);
+
+      const initialHash = {};
+      loadedUmum.forEach((data, idx) => { initialHash[`${project.id}_umum_${idx}`] = createPageHash(data); });
+      loadedProgres.forEach((data, idx) => { initialHash[`${project.id}_progres_${idx}`] = createPageHash(data); });
       
       lastSavedHashRef.current = initialHash;
       lastSavedHashRef.current.reportInfo = JSON.stringify(loadedInfo);
@@ -962,8 +985,8 @@ const App = () => {
       lastSavedHashRef.current.progresLength = loadedProgres.length;
 
       setPagesData({ 
-        umum: loadedUmum.length > 0 ? loadedUmum : [createNewPage()], 
-        progres: loadedProgres.length > 0 ? loadedProgres : [createNewPage()] 
+        umum: loadedUmum.length > 0 ? loadedUmum : [createNewPage()[0]], 
+        progres: loadedProgres.length > 0 ? loadedProgres : [createNewPage()[0]] 
       });
       setSaveStatus('saved');
       setStatusMsg({ text: '', type: '' });
@@ -985,16 +1008,38 @@ const App = () => {
 
     const backgroundDelete = async () => {
         try {
-            const batch = writeBatch(db);
-            batch.delete(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_projects', proj.id));
+            let batch = writeBatch(db);
+            let opsCount = 0;
+            
+            const pushDelete = async (ref) => {
+                batch.delete(ref);
+                opsCount++;
+                if (opsCount >= 10) {
+                    await batch.commit();
+                    batch = writeBatch(db);
+                    opsCount = 0;
+                }
+            };
+            
+            await pushDelete(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_projects', proj.id));
 
             const uCount = proj.pageCountUmum || 20;
             const pCount = proj.pageCountProgres || 20;
 
-            for (let i = 0; i < uCount; i++) batch.delete(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_umum_page_${i}`));
-            for (let i = 0; i < pCount; i++) batch.delete(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_progres_page_${i}`));
+            for (let i = 0; i < uCount; i++) {
+                await pushDelete(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_umum_page_${i}`));
+                await pushDelete(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_umum_page_${i}_p1`));
+                await pushDelete(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_umum_page_${i}_p2`));
+            }
+            for (let i = 0; i < pCount; i++) {
+                await pushDelete(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_progres_page_${i}`));
+                await pushDelete(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_progres_page_${i}_p1`));
+                await pushDelete(doc(db, 'artifacts', appId, 'public', 'data', 'docufield_pages', `${proj.id}_progres_page_${i}_p2`));
+            }
 
-            await batch.commit();
+            if (opsCount > 0) {
+                await batch.commit();
+            }
         } catch (e) {
             console.error("Penghapusan latar belakang selesai dengan peringatan:", e);
         }
@@ -1186,7 +1231,6 @@ const App = () => {
     });
   };
 
-  // --- FITUR PASTE KE SEMUA CATATAN DI HALAMAN INI ---
   const handlePasteToAllNotes = (pageIdx, text) => {
     setPagesData(prev => {
       const n = { ...prev };
@@ -1227,7 +1271,7 @@ const App = () => {
     setPagesData(prev => { 
         const n = {...prev}; 
         const cPages = [...safeArray(n[reportType])];
-        cPages[currentPage - 1] = createNewPage();
+        cPages[currentPage - 1] = createNewPage()[0];
         n[reportType] = cPages;
         return n; 
     });
@@ -1239,7 +1283,7 @@ const App = () => {
     if (pages.length >= 50) { setStatusMsg({ text: 'Maksimal 50 Halaman!', type: 'error' }); setTimeout(() => setStatusMsg({ text: '', type: '' }), 3000); return; }
     setPagesData(prev => {
         const n = {...prev};
-        n[reportType] = [...safeArray(n[reportType]), createNewPage()];
+        n[reportType] = [...safeArray(n[reportType]), createNewPage()[0]];
         return n;
     });
     setCurrentPage(pages.length + 1);
@@ -1356,8 +1400,8 @@ const App = () => {
         
         setReportInfo(loadedInfo); setReportType(data.reportType || 'umum'); 
         setPagesData({
-          umum: (data.pagesData?.umum && Array.isArray(data.pagesData.umum)) ? data.pagesData.umum : [createNewPage()],
-          progres: (data.pagesData?.progres && Array.isArray(data.pagesData.progres)) ? data.pagesData.progres : [createNewPage()]
+          umum: (data.pagesData?.umum && Array.isArray(data.pagesData.umum)) ? data.pagesData.umum : [createNewPage()[0]],
+          progres: (data.pagesData?.progres && Array.isArray(data.pagesData.progres)) ? data.pagesData.progres : [createNewPage()[0]]
         });
         setCurrentPage(1); setView('edit');
         
@@ -1394,7 +1438,7 @@ const App = () => {
         }
       }
       setView('dashboard'); 
-      setPagesData({ umum: [createNewPage()], progres: [createNewPage()] }); 
+      setPagesData({ umum: [createNewPage()[0]], progres: [createNewPage()[0]] }); 
       setBakedPages(null); setActiveProjectId(null); 
       setTimeout(() => setStatusMsg({ text: '', type: '' }), 1000);
     } else if (pendingAction === 'logout') {
@@ -1432,7 +1476,7 @@ const App = () => {
   };
 
   const triggerPdfBaking = async (action = 'download') => {
-    if (!isLibraryReady.pdf && action === 'share') return; // Library hanya wajib untuk share
+    if (!isLibraryReady.pdf && action === 'share') return; 
     setPdfAction(action);
     setIsPdfLoading(true); 
     setStatusMsg({ text: action === 'share' ? 'Menyiapkan File...' : 'Menyiapkan Data Cetak...', type: 'info' });
@@ -1471,7 +1515,6 @@ const App = () => {
         try { 
             window.scrollTo(0, 0); 
             
-            // PERBAIKAN: LOGIKA SHARE WA CERDAS
             if (pdfAction === 'share') {
                 const totalPages = (bakedPages || pages).length;
                 const maxPixels = 12000000;
@@ -1491,7 +1534,6 @@ const App = () => {
                 const pdfBlob = await window.html2pdf().set(options).from(element).output('blob');
                 const file = new File([pdfBlob], `${cleanTitle}.pdf`, { type: 'application/pdf' });
                 
-                // Jika Browser mendukung Share File NATIVE (Kirim Langsung)
                 if (navigator.canShare && navigator.canShare({ files: [file] })) {
                     try {
                         await navigator.share({
@@ -1504,13 +1546,9 @@ const App = () => {
                         setStatusMsg({ text: 'Batal Dibagikan', type: 'info' });
                     }
                 } else {
-                    // FALLBACK WHATSAPP: Jika Browser memblokir pengiriman file langsung
                     setStatusMsg({ text: 'Download & Buka WA...', type: 'info' });
-                    
-                    // 1. Download file-nya dulu ke memori HP
                     await window.html2pdf().set(options).from(element).save();
                     
-                    // 2. Arahkan ke WhatsApp
                     setTimeout(() => {
                         setStatusMsg({ text: 'Silakan lampirkan PDF di WA!', type: 'success' });
                         const waText = encodeURIComponent(`Berikut adalah ${reportInfo.title || 'Laporan Dokumentasi Lapangan'}. \n\n*(Catatan: File PDF telah diunduh ke HP saya, saya akan melampirkannya di bawah ini)*`);
@@ -1523,9 +1561,7 @@ const App = () => {
                 setShouldTriggerDownload(false); 
                 setTimeout(() => setStatusMsg({ text: '', type: '' }), 3000); 
 
-            } 
-            // LOGIKA CETAK PDF NATIVE (Teks Vektor Tajam)
-            else {
+            } else {
                 setStatusMsg({ text: 'Pilih "Simpan sebagai PDF"', type: 'info' });
                 
                 await new Promise((resolve) => {
@@ -1631,7 +1667,7 @@ const App = () => {
 
   const activePageData = useMemo(() => {
      const p = pages[currentPage - 1];
-     return Array.isArray(p) ? p : createNewPage();
+     return Array.isArray(p) ? p : createNewPage()[0];
   }, [pages, currentPage]);
 
   const ReportPage = ({ data, isFinal = false }) => {
