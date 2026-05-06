@@ -127,10 +127,11 @@
 
         let app, auth, db;
         try {
-            if (getApps().length === 0) {
-                app = initializeApp(firebaseConfig);
-            } else {
-                app = getApp();
+            // Mencegah konflik dengan sistem Canvas dengan memberi nama unik 'ApdokData' pada aplikasi ini
+            const appsList = getApps();
+            app = appsList.find(a => a.name === 'ApdokData');
+            if (!app) {
+                app = initializeApp(firebaseConfig, 'ApdokData');
             }
             auth = getAuth(app);
             db = getFirestore(app);
@@ -1017,7 +1018,7 @@
                     ]};
                 }
                 setReportInfo(loadedInfo);
-                const freshType = sessionData?.reportType || freshProjectData.lastActiveTab || freshProjectData.reportType || 'umum';
+                const freshType = sessionData?.reportType || freshProjectData.lastActiveTab || freshProjectData.lastActiveTab || freshProjectData.reportType || 'umum';
                 setReportType(freshType);
                 setView(sessionData?.view || 'edit');
                 setCurrentPage(sessionData?.currentPage || 1); 
