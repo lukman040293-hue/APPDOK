@@ -890,7 +890,7 @@
             };
 
             useEffect(() => {
-                if (!user || !activeProjectId || view === 'dashboard' || isOfflineMode) return;
+                if (!user || !activeProjectId || view === 'dashboard' || isOfflineMode || saveStatus === 'loading') return;
                 
                 const currentData = latestDataRef.current;
                 if (isProjectEmpty(currentData.reportInfo, currentData.pagesData)) return;
@@ -906,7 +906,7 @@
 
                     return () => clearTimeout(timer);
                 }
-            }, [reportInfo, pagesData, activeProjectId, user, view, activeEmail, projectAuthor, projectTime, isOfflineMode]);
+            }, [reportInfo, pagesData, activeProjectId, user, view, activeEmail, projectAuthor, projectTime, isOfflineMode, saveStatus]);
 
             const saveCurrentProject = async () => {
                 if (activeProjectId) {
@@ -998,8 +998,8 @@
                     lastSavedHashRef.current.umumLength = cache.pagesObj.umum.length;
                     lastSavedHashRef.current.progresLength = cache.pagesObj.progres.length;
 
-                    setView(sessionData?.view || 'edit');
                     setCurrentPage(sessionData?.currentPage || 1);
+                    setView(sessionData?.view || 'edit');
                     setSaveStatus('saved');
                     setStatusMsg({ text: '', type: '' });
                     return; 
@@ -1008,20 +1008,6 @@
                 setProjectAuthor(pAuthor);
                 setProjectTime(pTime);
                 isInitialLoad.current = true;
-                let loadedInfo = sessionData?.reportInfo || freshProjectData.reportInfo || defaultReportInfo;
-                if (!loadedInfo.customMeta || !Array.isArray(loadedInfo.customMeta)) {
-                    loadedInfo = { ...loadedInfo, customMeta: [
-                        { id: 'm1', label: 'Pekerjaan', value: loadedInfo.project || '' },
-                        { id: 'm2', label: 'Instansi', value: loadedInfo.department || '' },
-                        { id: 'm3', label: 'Kontraktor', value: loadedInfo.contractor || '' },
-                        { id: 'm4', label: 'Konsultan', value: loadedInfo.consultant || '' }
-                    ]};
-                }
-                setReportInfo(loadedInfo);
-                const freshType = sessionData?.reportType || freshProjectData.lastActiveTab || freshProjectData.lastActiveTab || freshProjectData.reportType || 'umum';
-                setReportType(freshType);
-                setView(sessionData?.view || 'edit');
-                setCurrentPage(sessionData?.currentPage || 1); 
                 
                 const createHalfPage = () => Array(3).fill(null).map(() => ({ id: Date.now() + Math.random(), src: null, note: '', brightness: 100, saturation: 100, progress: 0, zoom: 100, panX: 50, panY: 50 }));
 
@@ -1059,6 +1045,16 @@
                     fetchPageData('progres', freshProjectData.pageCountProgres || 0)
                 ]);
 
+                let loadedInfo = sessionData?.reportInfo || freshProjectData.reportInfo || defaultReportInfo;
+                if (!loadedInfo.customMeta || !Array.isArray(loadedInfo.customMeta)) {
+                    loadedInfo = { ...loadedInfo, customMeta: [
+                        { id: 'm1', label: 'Pekerjaan', value: loadedInfo.project || '' },
+                        { id: 'm2', label: 'Instansi', value: loadedInfo.department || '' },
+                        { id: 'm3', label: 'Kontraktor', value: loadedInfo.contractor || '' },
+                        { id: 'm4', label: 'Konsultan', value: loadedInfo.consultant || '' }
+                    ]};
+                }
+
                 const initialHash = {};
                 loadedUmum.forEach((data, idx) => { initialHash[`${project.id}_umum_${idx}`] = createPageHash(data); });
                 loadedProgres.forEach((data, idx) => { initialHash[`${project.id}_progres_${idx}`] = createPageHash(data); });
@@ -1068,10 +1064,16 @@
                 lastSavedHashRef.current.umumLength = loadedUmum.length;
                 lastSavedHashRef.current.progresLength = loadedProgres.length;
 
+                setReportInfo(loadedInfo);
+                const freshType = sessionData?.reportType || freshProjectData.lastActiveTab || freshProjectData.lastActiveTab || freshProjectData.reportType || 'umum';
+                setReportType(freshType);
                 setPagesData({ 
                     umum: loadedUmum.length > 0 ? loadedUmum : [createNewPage()], 
                     progres: loadedProgres.length > 0 ? loadedProgres : [createNewPage()] 
                 });
+                setCurrentPage(sessionData?.currentPage || 1); 
+                setView(sessionData?.view || 'edit'); 
+
                 setSaveStatus('saved');
                 setStatusMsg({ text: '', type: '' });
                 } catch (e) { 
