@@ -1171,6 +1171,7 @@
                         const projRef = doc(db, 'artifacts', appId, 'public', 'data', 'docufield_projects', activeProjectId);
                         await updateDoc(projRef, {
                             lockedBy: isLocked ? activeEmail : null,
+                            lockedSession: isLocked ? TAB_SESSION_ID : null,
                             lockedAt: isLocked ? Date.now() : null
                         });
                     } catch (e) {
@@ -1977,7 +1978,7 @@
                 <header className="bg-slate-900 text-white p-3 sm:p-4 sticky top-0 z-50 flex flex-col sm:flex-row gap-3 sm:gap-4 items-center justify-between shadow-2xl border-b border-white/5">
                     <div className="flex items-center justify-between w-full sm:w-auto">
                     <div className="flex items-center gap-2.5">
-                        <Cloud size={22} className={reportType === 'progres' ? 'text-emerald-400' : 'text-blue-400'}/>
+                        <Cloud size={22} className={reportType === 'progres' ? 'textemerald-400' : 'text-blue-400'}/>
                         <h1 className="font-black text-sm uppercase tracking-[0.2em]">Aplikasi Dokumentasi</h1>
                     </div>
                     <div className="flex items-center gap-2 text-[9px] sm:text-[10px] uppercase font-black tracking-widest sm:ml-4">
@@ -2139,7 +2140,9 @@
                                 </div>
                                 
                                 {(() => {
-                                    const isLocked = p.lockedBy && p.lockedBy !== activeEmail && (Date.now() - (p.lockedAt || 0)) < 45000;
+                                    // LOGIKA BARU: Mengecek Kunci Berdasarkan TAB_SESSION_ID
+                                    const isLocked = p.lockedAt && (Date.now() - p.lockedAt) < 45000 && 
+                                                    (p.lockedSession ? p.lockedSession !== TAB_SESSION_ID : p.lockedBy !== activeEmail);
                                     
                                     if (isLocked) {
                                         return (
