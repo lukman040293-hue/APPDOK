@@ -344,12 +344,38 @@
                         )}
                         
                         <div className="flex flex-col bg-slate-50 rounded-2xl sm:rounded-[28px] border-2 border-transparent focus-within:bg-white focus-within:border-blue-100 transition-all shadow-inner overflow-hidden">
-                            <div className="flex items-center justify-between px-4 sm:px-5 py-2 sm:py-3 border-b border-slate-200/60 bg-slate-100/50">
-                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Keterangan</span>
-                                <div className="flex items-center gap-1.5">
-                                    <button type="button" onClick={() => copyText(p?.note)} className="p-1.5 text-blue-600 bg-white rounded-lg shadow-sm hover:bg-blue-50 active:scale-95 transition-all" title="Copy Text"><Copy size={12}/></button>
-                                    <button type="button" onClick={() => updatePhoto('note', copiedNote)} className="p-1.5 text-emerald-600 bg-white rounded-lg shadow-sm hover:bg-emerald-50 active:scale-95 transition-all" title="Paste Text"><ClipboardPaste size={12}/></button>
-                                    <button type="button" onClick={() => pasteToAllNotes(p?.note || copiedNote)} className="px-2 py-1.5 text-purple-600 bg-white rounded-lg shadow-sm hover:bg-purple-50 active:scale-95 transition-all flex items-center gap-1" title="Terapkan teks ini ke semua foto di halaman ini"><CheckCheck size={12}/><span className="text-[8px] font-black uppercase">Semua</span></button>
+                            <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-5 py-2 sm:py-3 border-b border-slate-200/60 bg-slate-100/50">
+                                <div className="flex items-center gap-1.5 sm:gap-2">
+                                    <span className="text-[8px] sm:text-[9px] font-black text-slate-400 uppercase tracking-widest shrink-0">Keterangan</span>
+                                    <select
+                                        onChange={(e) => {
+                                            if(!e.target.value) return;
+                                            const currentNote = p?.note || '';
+                                            const staText = `STA : ${e.target.value}`;
+                                            const newNote = currentNote ? (currentNote.trim() === '' ? staText : `${currentNote}\n${staText}`) : staText;
+                                            updatePhoto('note', newNote);
+                                            e.target.value = ""; 
+                                        }}
+                                        className="px-1.5 sm:px-2 py-1 sm:py-0.5 bg-indigo-100 text-indigo-700 hover:bg-indigo-200 rounded-md text-[7px] sm:text-[8px] font-black uppercase transition-all shadow-sm cursor-pointer outline-none shrink-0"
+                                        title="Pilih dan tambahkan STA"
+                                    >
+                                        <option value="">+ PILIH STA</option>
+                                        {Array.from({length: 201}, (_, i) => {
+                                            const km = Math.floor((i * 25) / 1000);
+                                            const m = ((i * 25) % 1000).toString().padStart(3, '0');
+                                            return `${km}+${m}`;
+                                        }).map(val => (
+                                            <option key={val} value={val}>{val}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 ml-auto">
+                                    <button type="button" onClick={() => copyText(p?.note)} className="p-1 sm:p-1.5 text-blue-600 bg-white rounded-md sm:rounded-lg shadow-sm hover:bg-blue-50 active:scale-95 transition-all" title="Copy Text"><Copy size={12}/></button>
+                                    <button type="button" onClick={() => updatePhoto('note', copiedNote)} className="p-1 sm:p-1.5 text-emerald-600 bg-white rounded-md sm:rounded-lg shadow-sm hover:bg-emerald-50 active:scale-95 transition-all" title="Paste Text"><ClipboardPaste size={12}/></button>
+                                    <button type="button" onClick={() => pasteToAllNotes(p?.note || copiedNote)} className="px-1.5 sm:px-2 py-1 sm:py-1.5 text-purple-600 bg-white rounded-md sm:rounded-lg shadow-sm hover:bg-purple-50 active:scale-95 transition-all flex items-center gap-1" title="Terapkan teks ini ke semua foto di halaman ini">
+                                        <CheckCheck size={12}/>
+                                        <span className="text-[8px] font-black uppercase">Semua</span>
+                                    </button>
                                 </div>
                             </div>
                             <textarea 
@@ -1864,7 +1890,7 @@
                             <div className="text-[6.5pt] font-black text-slate-400 uppercase tracking-tighter">KETERANGAN:</div>
                             {reportType === 'progres' && p?.src && <div className="text-[7pt] font-black text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">PROGRES: {p.progress || 0}%</div>}
                             </div>
-                            <p className={`text-[7.5pt] leading-tight italic line-clamp-2 ${isModern ? 'text-slate-800' : 'text-slate-800 font-medium'}`}>{p?.note || '-'}</p>
+                            <p className={`text-[7.5pt] leading-tight italic line-clamp-2 whitespace-pre-line ${isModern ? 'text-slate-800' : 'text-slate-800 font-medium'}`}>{p?.note || '-'}</p>
                         </div>
                         </div>
                     ))}
