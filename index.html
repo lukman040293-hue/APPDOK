@@ -1798,23 +1798,34 @@
                     curY += 0.45;
                     const cMeta = reportInfo.customMeta || [];
                     const meta = [...cMeta.map(m => ({ l: (m.label || '').toUpperCase(), v: m.value })), { l: "TAHUN", v: reportInfo.date }];
-                    meta.forEach(m => {
-                    slide.addText(m.l, { x: PAGE_MARGIN_SIDE, y: curY, w: 1.0, fontSize: 7, bold: true, color: '94A3B8' });
-                    slide.addText(":", { x: PAGE_MARGIN_SIDE + 1.0, y: curY, w: 0.1, fontSize: 7, bold: true, color: '475569' });
-                    slide.addText(m.v || '-', { x: PAGE_MARGIN_SIDE + 1.15, y: curY, w: CONTENT_W - 1.15, fontSize: 8, bold: true, color: '1E293B' });
-                    curY += (m.v?.length > 80) ? 0.22 : 0.14;
-                    });
                     
                     const isModernTemplate = reportInfo.template === 'modern';
                     const isMinimalis = reportInfo.template === 'minimalis';
                     
-                    let lineColor = '0F172A'; 
-                    let lineWidth = 2;
-                    if (isModernTemplate) { lineColor = '3730A3'; lineWidth = 3; } 
-                    else if (isMinimalis) { lineColor = '000000'; lineWidth = 1; }
-                    else if (reportType === 'progres') { lineColor = '10B981'; }
+                    if (isMinimalis) {
+                        let metaHeight = 0;
+                        meta.forEach(m => { metaHeight += (m.v?.length > 80) ? 0.22 : 0.14; });
+                        slide.addShape(pptx.ShapeType.rect, { x: PAGE_MARGIN_SIDE, y: curY - 0.05, w: CONTENT_W, h: metaHeight + 0.1, line: { color: '000000', width: 1 } });
+                    }
+
+                    meta.forEach(m => {
+                        let textX = PAGE_MARGIN_SIDE + (isMinimalis ? 0.1 : 0);
+                        slide.addText(m.l, { x: textX, y: curY, w: 1.0, fontSize: 7, bold: true, color: isMinimalis ? '000000' : '94A3B8' });
+                        slide.addText(":", { x: textX + 1.0, y: curY, w: 0.1, fontSize: 7, bold: true, color: isMinimalis ? '000000' : '475569' });
+                        slide.addText(m.v || '-', { x: textX + 1.15, y: curY, w: CONTENT_W - 1.15 - (isMinimalis ? 0.2 : 0), fontSize: 8, bold: true, color: isMinimalis ? '000000' : '1E293B' });
+                        curY += (m.v?.length > 80) ? 0.22 : 0.14;
+                    });
                     
-                    slide.addShape(pptx.ShapeType.line, { x: PAGE_MARGIN_SIDE, y: curY + 0.05, w: CONTENT_W, h: 0, line: { color: lineColor, width: lineWidth } });
+                    if (isMinimalis) {
+                        curY += 0.1;
+                    } else {
+                        let lineColor = '0F172A'; 
+                        let lineWidth = 2;
+                        if (isModernTemplate) { lineColor = '3730A3'; lineWidth = 3; } 
+                        else if (reportType === 'progres') { lineColor = '10B981'; }
+                        
+                        slide.addShape(pptx.ShapeType.line, { x: PAGE_MARGIN_SIDE, y: curY + 0.05, w: CONTENT_W, h: 0, line: { color: lineColor, width: lineWidth } });
+                    }
                     
                     for (let i = 0; i < pData.length; i++) {
                     const photo = pData[i]; const col = i % 2, row = Math.floor(i / 2);
@@ -1859,20 +1870,29 @@
                 const isModern = template === 'modern';
                 const isMinimalis = template === 'minimalis';
                 
-                let baseFontClass, headerTitleClass, headerBorderClass;
+                let baseFontClass, headerTitleClass, headerBorderClass, metaBoxClass, metaLabelColor, metaValueColor;
 
                 if (isModern) {
                     baseFontClass = 'font-serif text-slate-800';
                     headerTitleClass = 'text-indigo-950 tracking-wide font-bold';
                     headerBorderClass = reportType === 'progres' ? 'border-b-4 border-emerald-700' : 'border-b-4 border-indigo-800';
+                    metaBoxClass = 'flex flex-col gap-y-0 text-left mt-1';
+                    metaLabelColor = 'text-slate-500';
+                    metaValueColor = 'text-slate-900';
                 } else if (isMinimalis) {
                     baseFontClass = 'font-sans text-black';
                     headerTitleClass = 'text-black tracking-widest font-bold';
-                    headerBorderClass = reportType === 'progres' ? 'border-b border-emerald-600' : 'border-b border-black';
+                    headerBorderClass = ''; 
+                    metaBoxClass = 'flex flex-col gap-y-0 text-left border border-black p-1.5 mt-1 bg-white';
+                    metaLabelColor = 'text-black';
+                    metaValueColor = 'text-black';
                 } else { // klasik
                     baseFontClass = 'font-sans text-black';
                     headerTitleClass = 'text-slate-900 font-black';
                     headerBorderClass = reportType === 'progres' ? 'border-b-2 border-emerald-500' : 'border-b-2 border-slate-900';
+                    metaBoxClass = 'flex flex-col gap-y-0 text-left mt-1';
+                    metaLabelColor = 'text-slate-500';
+                    metaValueColor = 'text-slate-900';
                 }
 
                 // Fungsi canggih untuk mengubah "STA : 0+050" menjadi BOLD otomatis saat dicetak
@@ -1908,12 +1928,12 @@
                     
                     <h2 className={`text-xl uppercase mb-1.5 leading-tight ${headerTitleClass}`}>{reportInfo.title || 'LAPORAN DOKUMENTASI'}</h2>
                     
-                    <div className="flex flex-col gap-y-0 text-left">
+                    <div className={metaBoxClass}>
                         {meta.map((m, idx) => (
                         <div key={idx} className="flex items-start uppercase text-[6.5pt] tracking-tight w-full mb-[2px]">
-                            <span className="w-24 shrink-0 font-bold text-slate-500">{m.l}</span>
-                            <span className="mr-1.5 font-bold text-slate-500">:</span>
-                            <span className="font-black flex-1 break-words leading-snug text-slate-900">{m.v || '-'}</span>
+                            <span className={`w-24 shrink-0 font-bold ${metaLabelColor}`}>{m.l}</span>
+                            <span className={`mr-1.5 font-bold ${metaLabelColor}`}>:</span>
+                            <span className={`font-black flex-1 break-words leading-snug ${metaValueColor}`}>{m.v || '-'}</span>
                         </div>
                         ))}
                     </div>
