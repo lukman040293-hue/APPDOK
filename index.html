@@ -36,8 +36,11 @@
 
         @media print { 
             @page { size: A4 portrait; margin: 0 !important; } 
-            html, body { width: 100% !important; margin: 0 !important; padding: 0 !important; background: white !important; }
+            html, body { width: 100% !important; height: auto !important; margin: 0 !important; padding: 0 !important; background: white !important; }
+            
+            /* Sembunyikan elemen UI dan hilangkan padding/margin bawaan aplikasi (pb-20) */
             header, main, .fixed, nav, button { display: none !important; }
+            #root, #root > div { padding: 0 !important; margin: 0 !important; min-height: auto !important; }
             
             /* Memaksa kontainer yang terpotong menjadi tampil penuh saat print */
             div { overflow: visible !important; }
@@ -57,10 +60,13 @@
                 width: 210mm !important;
                 margin: 0 auto !important; 
                 display: block !important; /* Harus block agar browser bisa memisahkan halaman dengan benar */
+                padding: 0 !important;
             }
             .report-page-final { 
                 width: 210mm !important;
-                height: 296.5mm !important;
+                height: 296mm !important; /* Kurangi sedikit agar aman dari overflow tersembunyi */
+                max-height: 296mm !important;
+                overflow: hidden !important; /* Cegah tumpahan piksel */
                 box-sizing: border-box !important;
                 page-break-inside: avoid !important;
                 border: none !important; 
@@ -72,7 +78,7 @@
                 page-break-after: always !important;
             }
             .report-page-final:last-child {
-                page-break-after: auto !important;
+                page-break-after: avoid !important; /* Pastikan halaman terakhir TIDAK ditambah pemisah */
             }
             * { 
                 -webkit-print-color-adjust: exact !important; 
