@@ -39,18 +39,24 @@
             html, body { width: 100% !important; margin: 0 !important; padding: 0 !important; background: white !important; }
             header, main, .fixed, nav, button { display: none !important; }
             
+            /* Memaksa kontainer yang terpotong menjadi tampil penuh saat print */
+            div { overflow: visible !important; }
+
             #pdf-container-wrapper {
-                position: relative !important;
-                left: auto !important;
-                top: auto !important;
+                position: static !important;
+                left: 0 !important;
+                top: 0 !important;
+                margin: 0 !important;
+                padding: 0 !important;
                 pointer-events: auto !important;
-                display: block !important; /* MENGHAPUS FLEXBOX KARENA MEMBUAT BROWSER GAGAL PRINT */
+                display: block !important; 
                 width: 100% !important;
                 visibility: visible !important;
             }
             #pdf-render-area {
                 width: 210mm !important;
-                margin: 0 auto !important; /* CARA AMAN UNTUK MEMBUAT POSISI CENTER SAAT PRINT */
+                margin: 0 auto !important; 
+                display: block !important; /* Harus block agar browser bisa memisahkan halaman dengan benar */
             }
             .report-page-final { 
                 width: 210mm !important;
@@ -59,7 +65,8 @@
                 page-break-inside: avoid !important;
                 border: none !important; 
                 box-shadow: none !important; 
-                margin: 0 auto !important; /* CARA AMAN UNTUK MEMBUAT POSISI CENTER SAAT PRINT */
+                margin: 0 auto !important; 
+                display: flex !important;
             } 
             .report-page-final:not(:last-child) {
                 page-break-after: always !important;
@@ -1953,16 +1960,16 @@
                         
                         if (isModern) {
                             outerCardClass = 'p-2 rounded-2xl shadow-sm border border-slate-200';
-                            photoBoxClass = 'h-[53.5mm] rounded-xl border border-slate-300 bg-slate-50';
+                            photoBoxClass = 'h-[53.5mm] rounded-xl border border-slate-300 bg-slate-50 overflow-hidden';
                             noteBoxClass = `mt-2 pl-2 border-l-[3px] ${reportType === 'progres' ? 'border-emerald-600' : 'border-indigo-500'}`;
                         } else if (isMinimalis) {
                             // SATU KOTAK LINE: Frame luar satu kesatuan, foto full menyentuh pinggir, dipisah 1 garis tengah
                             outerCardClass = `p-0 border ${reportType === 'progres' ? 'border-emerald-600' : 'border-black'} overflow-hidden`;
-                            photoBoxClass = `h-[55mm] border-b ${reportType === 'progres' ? 'border-emerald-600' : 'border-black'} bg-slate-50`;
+                            photoBoxClass = `h-[55mm] border-b ${reportType === 'progres' ? 'border-emerald-600' : 'border-black'} bg-slate-50 overflow-hidden`;
                             noteBoxClass = 'p-2';
                         } else { // Klasik
                             outerCardClass = 'p-2 rounded-xl border border-slate-200';
-                            photoBoxClass = 'h-[53.5mm] rounded-lg border border-slate-300 bg-slate-50';
+                            photoBoxClass = 'h-[53.5mm] rounded-lg border border-slate-300 bg-slate-50 overflow-hidden';
                             noteBoxClass = `mt-2 pl-2 border-l-[3px] ${reportType === 'progres' ? 'border-emerald-500' : 'border-slate-800'}`;
                         }
                         
@@ -1973,24 +1980,12 @@
                         
                         <div className={`relative flex items-center justify-center w-full shrink-0 ${photoBoxClass}`}>
                             {p?.src ? (
-                                isFinal || p.isBaked ? (
-                                <div 
-                                    style={{ 
-                                        backgroundImage: `url(${p.src})`, 
-                                        backgroundSize: 'cover', 
-                                        backgroundPosition: 'center', 
-                                        width: '100%', 
-                                        height: '100%' 
-                                    }} 
-                                />
-                                ) : (
                                 <img 
                                     src={p.src} 
                                     className="w-full h-full object-cover block" 
-                                    style={{ filter: `brightness(${p?.brightness || 100}%) saturate(${p?.saturation || 100}%)`, transform: `scale(${(p?.zoom || 100) / 100})`, transformOrigin: `${p?.panX ?? 50}% ${p?.panY ?? 50}%` }} 
+                                    style={ (isFinal || p.isBaked) ? {} : { filter: `brightness(${p?.brightness || 100}%) saturate(${p?.saturation || 100}%)`, transform: `scale(${(p?.zoom || 100) / 100})`, transformOrigin: `${p?.panX ?? 50}% ${p?.panY ?? 50}%` } } 
                                     alt="" 
                                 />
-                                )
                             ) : <ImageIcon size={30} className="text-slate-200" />}
                         </div>
                         
