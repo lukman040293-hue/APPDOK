@@ -2158,6 +2158,7 @@
 
                 {statusMsg.text && <div className={`fixed top-20 sm:top-24 left-1/2 -translate-x-1/2 z-[100] px-6 py-2.5 rounded-2xl shadow-2xl flex items-center gap-3 font-black text-[10px] sm:text-xs text-white uppercase tracking-widest animate-in slide-in-from-top-6 ${statusMsg.type === 'error' ? 'bg-red-600' : 'bg-blue-600 border border-white/20'}`}>{statusMsg.type === 'info' && <Loader2 size={16} className="animate-spin" />} {statusMsg.text}</div>}
 
+                {/* Dashboard View */}
                 {view === 'dashboard' && (
                     <main className="max-w-6xl mx-auto p-4 sm:p-8 animate-in fade-in duration-500">
                     <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end mb-8 gap-6">
@@ -2296,6 +2297,7 @@
                     </main>
                 )}
 
+                {/* Edit View */}
                 {view === 'edit' && (
                     <main className="max-w-6xl mx-auto p-4 sm:p-10 animate-in fade-in duration-500">
                     <div className="flex bg-white p-1.5 rounded-[24px] mb-6 shadow-xl max-w-md mx-auto border border-slate-200">
@@ -2424,6 +2426,7 @@
                     </main>
                 )}
 
+                {/* Preview View */}
                 {view === 'preview' && (
                     <main className="w-full bg-slate-200 min-h-screen py-10 flex flex-col items-center overflow-x-auto relative">
                     <div className="sticky top-2 z-40 bg-slate-900/80 backdrop-blur-xl px-5 py-3 rounded-full flex items-center gap-5 shadow-2xl text-white mt-4 mb-4 border border-white/20 transition-all">
@@ -2444,12 +2447,14 @@
                     </main>
                 )}
 
+                {/* Container Tersembunyi untuk proses ekspor ke PDF */}
                 <div id="pdf-container-wrapper" style={{ position: 'absolute', top: 0, left: '-9999px', pointerEvents: 'none', zIndex: -1000 }}>
                     <div id="pdf-render-area" style={{ width: '210mm', backgroundColor: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                         {(bakedPages || pages).map((p, i) => <ReportPage key={`render-${i}`} data={p} isFinal={true} />)}
                     </div>
                 </div>
 
+                {/* Modals */}
                 {showReminderModal && (
                     <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
                     <div className="bg-white rounded-[24px] p-6 sm:p-8 max-w-md w-full shadow-2xl animate-in zoom-in-95 border-2 border-orange-100">
