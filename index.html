@@ -1732,27 +1732,44 @@
                                     shareSuccess = true;
                                 } catch (e) {
                                     console.warn("Share API gagal atau diblokir browser:", e);
-                                    // Biarkan shareSuccess = false agar masuk ke fallback di bawah
+                                    if (e.name === 'AbortError') {
+                                        // Jika user membatalkan (cancel) menu share bawaan HP, hentikan proses.
+                                        shareSuccess = true; 
+                                        setStatusMsg({ text: 'Batal Dibagikan', type: 'info' });
+                                    }
                                 }
                             } 
                             
                             if (!shareSuccess) {
                                 setStatusMsg({ text: 'Download & Buka WA...', type: 'info' });
                                 
+                                const waText = encodeURIComponent(`Berikut adalah ${reportInfo.title || 'Laporan Dokumentasi Lapangan'}. \n\n*(Catatan: File PDF telah diunduh ke HP/Perangkat saya, saya akan melampirkannya di bawah ini)*`);
+                                const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry/i.test(navigator.userAgent);
+                                
+                                // Gunakan skema "whatsapp://" untuk memaksa buka Aplikasi (bukan browser) di HP
+                                const waUrl = isMobile ? `whatsapp://send?text=${waText}` : `https://web.whatsapp.com/send?text=${waText}`;
+                                
+                                // Trik Desktop: Buka tab baru SEBELUM proses async dimulai agar tidak terblokir popup blocker
+                                let waWindow = null;
+                                if (!isMobile) {
+                                    waWindow = window.open('', '_blank');
+                                }
+                                
                                 await window.html2pdf().set(options).from(element).save();
                                 
-                                setTimeout(() => {
-                                    setStatusMsg({ text: 'Silakan lampirkan PDF di WA!', type: 'success' });
-                                    const waText = encodeURIComponent(`Berikut adalah ${reportInfo.title || 'Laporan Dokumentasi Lapangan'}. \n\n*(Catatan: File PDF telah diunduh ke HP/Perangkat saya, saya akan melampirkannya di bawah ini)*`);
-                                    
-                                    // Gunakan tag <a> virtual untuk menghindari pemblokiran popup (Popup Blocker)
-                                    const waLink = document.createElement('a');
-                                    waLink.href = `https://api.whatsapp.com/send?text=${waText}`;
-                                    waLink.target = '_blank';
-                                    document.body.appendChild(waLink);
-                                    waLink.click();
-                                    document.body.removeChild(waLink);
-                                }, 1500);
+                                setStatusMsg({ text: 'Silakan lampirkan PDF di WA!', type: 'success' });
+                                
+                                if (isMobile) {
+                                    // Eksekusi langsung via href (Sangat aman dari blokir Popup di HP)
+                                    window.location.href = waUrl;
+                                } else {
+                                    // Eksekusi ke tab yang sudah disiapkan sebelumnya (Desktop)
+                                    if (waWindow) {
+                                        waWindow.location.href = waUrl;
+                                    } else {
+                                        window.location.href = waUrl; // Fallback darurat
+                                    }
+                                }
                             }
                             
                             setIsPdfLoading(false); 
