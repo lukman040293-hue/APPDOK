@@ -1720,6 +1720,7 @@
                             const pdfBlob = await window.html2pdf().set(options).from(element).output('blob');
                             const file = new File([pdfBlob], `${cleanTitle}.pdf`, { type: 'application/pdf' });
                             
+                            let shareSuccess = false;
                             if (navigator.canShare && navigator.canShare({ files: [file] })) {
                                 try {
                                     await navigator.share({
@@ -1728,18 +1729,29 @@
                                         text: '*Laporan Dokumentasi Lapangan*'
                                     });
                                     setStatusMsg({ text: 'Berhasil dibagikan!', type: 'success' });
+                                    shareSuccess = true;
                                 } catch (e) {
-                                    setStatusMsg({ text: 'Batal Dibagikan', type: 'info' });
+                                    console.warn("Share API gagal atau diblokir browser:", e);
+                                    // Biarkan shareSuccess = false agar masuk ke fallback di bawah
                                 }
-                            } else {
+                            } 
+                            
+                            if (!shareSuccess) {
                                 setStatusMsg({ text: 'Download & Buka WA...', type: 'info' });
                                 
                                 await window.html2pdf().set(options).from(element).save();
                                 
                                 setTimeout(() => {
                                     setStatusMsg({ text: 'Silakan lampirkan PDF di WA!', type: 'success' });
-                                    const waText = encodeURIComponent(`Berikut adalah ${reportInfo.title || 'Laporan Dokumentasi Lapangan'}. \n\n*(Catatan: File PDF telah diunduh ke HP saya, saya akan melampirkannya di bawah ini)*`);
-                                    window.open(`https://api.whatsapp.com/send?text=${waText}`, '_blank');
+                                    const waText = encodeURIComponent(`Berikut adalah ${reportInfo.title || 'Laporan Dokumentasi Lapangan'}. \n\n*(Catatan: File PDF telah diunduh ke HP/Perangkat saya, saya akan melampirkannya di bawah ini)*`);
+                                    
+                                    // Gunakan tag <a> virtual untuk menghindari pemblokiran popup (Popup Blocker)
+                                    const waLink = document.createElement('a');
+                                    waLink.href = `https://api.whatsapp.com/send?text=${waText}`;
+                                    waLink.target = '_blank';
+                                    document.body.appendChild(waLink);
+                                    waLink.click();
+                                    document.body.removeChild(waLink);
                                 }, 1500);
                             }
                             
