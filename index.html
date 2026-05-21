@@ -487,6 +487,7 @@
             const [pendingAction, setPendingAction] = useState(null); 
 
             const [accessData, setAccessData] = useState({ allowed: [], admins: [] });
+            const [isAccessLoaded, setIsAccessLoaded] = useState(false);
             const [showAccessModal, setShowAccessModal] = useState(false);
             const [newEmailUser, setNewEmailUser] = useState('');
             const [newEmailAdmin, setNewEmailAdmin] = useState(false);
@@ -657,6 +658,7 @@
                     const unsubscribe = onSnapshot(docRef, (snap) => {
                     if (snap.exists()) {
                         setAccessData(snap.data());
+                        setIsAccessLoaded(true);
                     } else {
                         const initialData = { allowed: DEFAULT_EMAIL_IZIN, admins: DEFAULT_ADMIN };
                         setDoc(docRef, initialData).catch(e => {
@@ -667,6 +669,7 @@
                             if (e.code === 'resource-exhausted' || e.message?.includes('Quota') || e.message?.includes('quota')) triggerOfflineMode('Kuota Habis');
                         });
                         setAccessData(initialData);
+                        setIsAccessLoaded(true);
                     }
                     }, (error) => {
                     if (error.code === 'permission-denied') {
@@ -676,6 +679,7 @@
                     if (error.code === 'resource-exhausted' || error.message?.includes('Quota') || error.message?.includes('quota')) {
                         triggerOfflineMode('Kuota Habis');
                     }
+                    setIsAccessLoaded(false);
                     });
 
                     return () => unsubscribe();
@@ -786,6 +790,10 @@
             };
 
             const handleAddNewEmail = () => {
+                if (!isAccessLoaded) {
+                    setStatusMsg({ text: 'Tunggu data dimuat...', type: 'error' });
+                    return;
+                }
                 const email = newEmailUser.trim().toLowerCase();
                 if (!email) return;
                 
@@ -807,6 +815,7 @@
             };
 
             const handleRemoveAccessEmail = (emailToRemove) => {
+                if (!isAccessLoaded) return;
                 if (emailToRemove === activeEmail) { setStatusMsg({ text: 'Tidak bisa menghapus akun sendiri!', type: 'error' }); setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000); return; }
                 if (DEFAULT_EMAIL_IZIN.includes(emailToRemove.toLowerCase())) {
                     setStatusMsg({ text: 'Email bawaan KODE tidak bisa dihapus.', type: 'error' }); 
@@ -2561,21 +2570,28 @@
                         <div className="flex gap-2"><input type="email" value={newEmailUser} onChange={(e) => setNewEmailUser(e.target.value)} placeholder="email@proyek.com" className="flex-1 px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs outline-none" /></div>
                         <div className="flex items-center justify-between mt-2.5 px-1">
                             <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={newEmailAdmin} onChange={e => setNewEmailAdmin(e.target.checked)} className="w-3.5 h-3.5 accent-blue-600" /><span className="text-[10px] font-bold text-slate-600">Jadikan Admin</span></label>
-                            <button onClick={handleAddNewEmail} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-[9px] font-black uppercase shadow-md">Tambah</button>
+                            <button onClick={handleAddNewEmail} disabled={!isAccessLoaded} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-[9px] font-black uppercase shadow-md disabled:opacity-50">Tambah</button>
                         </div>
                         </div>
                         <div className="flex-1 overflow-y-auto space-y-1.5 mb-3">
-                        {currentAllowed.map((em, idx) => (
-                            <div key={idx} className="flex items-center justify-between bg-slate-50 px-3 py-2 rounded-xl border border-slate-200">
-                            <div className="flex items-center gap-2 overflow-hidden">
-                                <div className={`p-1.5 rounded-lg ${currentAdmins.includes(em) ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-200 text-slate-500'}`}><User size={14}/></div>
-                                <div className="flex flex-col truncate"><span className="text-[10px] font-bold text-slate-700 truncate">{em}</span><span className="text-[8px] font-black uppercase text-slate-400">{currentAdmins.includes(em) ? 'Administrator' : 'Pengguna Biasa'}</span></div>
+                        {!isAccessLoaded ? (
+                            <div className="flex flex-col items-center justify-center p-6 text-slate-400 gap-3">
+                                <Loader2 size={24} className="animate-spin text-blue-500" />
+                                <span className="text-xs font-bold uppercase tracking-widest">Menarik Data...</span>
                             </div>
-                            {!DEFAULT_EMAIL_IZIN.includes(em.toLowerCase()) && em !== activeEmail && (
-                                <button onClick={() => handleRemoveAccessEmail(em)} className="text-red-400 hover:text-red-600 p-1.5 transition-all"><Trash2 size={14}/></button>
-                            )}
-                            </div>
-                        ))}
+                        ) : (
+                            currentAllowed.map((em, idx) => (
+                                <div key={idx} className="flex items-center justify-between bg-slate-50 px-3 py-2 rounded-xl border border-slate-200">
+                                <div className="flex items-center gap-2 overflow-hidden">
+                                    <div className={`p-1.5 rounded-lg ${currentAdmins.includes(em) ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-200 text-slate-500'}`}><User size={14}/></div>
+                                    <div className="flex flex-col truncate"><span className="text-[10px] font-bold text-slate-700 truncate">{em}</span><span className="text-[8px] font-black uppercase text-slate-400">{currentAdmins.includes(em) ? 'Administrator' : 'Pengguna Biasa'}</span></div>
+                                </div>
+                                {!DEFAULT_EMAIL_IZIN.includes(em.toLowerCase()) && em !== activeEmail && (
+                                    <button onClick={() => handleRemoveAccessEmail(em)} disabled={!isAccessLoaded} className="text-red-400 hover:text-red-600 p-1.5 transition-all disabled:opacity-50"><Trash2 size={14}/></button>
+                                )}
+                                </div>
+                            ))
+                        )}
                         </div>
                         <div className="pt-3 border-t border-slate-100"><button onClick={() => setShowAccessModal(false)} className="w-full py-3 rounded-xl font-black text-[10px] uppercase text-slate-500 bg-slate-100 hover:bg-slate-200">Tutup</button></div>
                     </div>
