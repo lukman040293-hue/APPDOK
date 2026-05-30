@@ -1953,7 +1953,7 @@
                 const estimatedLines = meta.reduce((acc, m) => acc + Math.max(1, Math.ceil((m.v ? m.v.length : 0) / 75)), 0);
                 
                 // Dynamic styling berdasarkan panjang teks agar tidak tumpah
-                let metaTextSize = 'text-[6pt] leading-tight';
+                let metaTextSize = 'text-[7pt] leading-tight';
                 let formalPadding = 'py-0.5';
                 let titleSize = 'text-lg mb-1';
                 let titlePadding = 'py-1';
@@ -1967,7 +1967,7 @@
                     titlePadding = 'py-0.5';
                     logoHeight = '11mm';
                 } else if (estimatedLines >= 7 || totalTextLength > 300) {
-                    metaTextSize = 'text-[5.5pt] leading-tight';
+                    metaTextSize = 'text-[6pt] leading-tight';
                     formalPadding = 'py-[1px]';
                     titleSize = 'text-base mb-1';
                     titlePadding = 'py-0.5';
@@ -2057,20 +2057,20 @@
                         
                         if (isModern) {
                             outerCardClass = 'p-1.5 rounded-2xl shadow-sm border border-slate-200 flex flex-col min-h-0';
-                            photoBoxClass = 'h-[50mm] rounded-xl border border-slate-300 bg-slate-50 overflow-hidden shrink-0';
+                            photoBoxClass = 'h-[56mm] rounded-xl border border-slate-300 bg-slate-50 overflow-hidden shrink-0';
                             noteBoxClass = `mt-1.5 pl-2 border-l-[3px] flex flex-col justify-start min-h-0 overflow-hidden ${reportType === 'progres' ? 'border-emerald-600' : 'border-indigo-500'}`;
                         } else if (isMinimalis) {
                             // SATU KOTAK LINE: Frame luar satu kesatuan, foto full menyentuh pinggir, dipisah 1 garis tengah
                             outerCardClass = `p-0 border ${reportType === 'progres' ? 'border-emerald-600' : 'border-black'} overflow-hidden flex flex-col min-h-0`;
-                            photoBoxClass = `h-[51mm] border-b ${reportType === 'progres' ? 'border-emerald-600' : 'border-black'} bg-slate-50 overflow-hidden shrink-0`;
+                            photoBoxClass = `h-[58mm] border-b ${reportType === 'progres' ? 'border-emerald-600' : 'border-black'} bg-slate-50 overflow-hidden shrink-0`;
                             noteBoxClass = 'p-1.5 flex flex-col justify-start min-h-0 overflow-hidden';
                         } else if (isFormal) {
                             outerCardClass = `p-1 border-2 ${reportType === 'progres' ? 'border-emerald-400' : 'border-[#b4c6e7]'} bg-white flex flex-col min-h-0`;
-                            photoBoxClass = 'h-[50mm] border border-slate-200 bg-slate-50 overflow-hidden shrink-0';
+                            photoBoxClass = 'h-[56mm] border border-slate-200 bg-slate-50 overflow-hidden shrink-0';
                             noteBoxClass = `mt-1 p-1 flex-1 flex flex-col justify-start border min-h-0 overflow-hidden ${reportType === 'progres' ? 'border-emerald-400' : 'border-[#b4c6e7]'}`;
                         } else { // Klasik
                             outerCardClass = 'p-1.5 rounded-xl border border-slate-200 flex flex-col min-h-0';
-                            photoBoxClass = 'h-[50mm] rounded-lg border border-slate-300 bg-slate-50 overflow-hidden shrink-0';
+                            photoBoxClass = 'h-[56mm] rounded-lg border border-slate-300 bg-slate-50 overflow-hidden shrink-0';
                             noteBoxClass = `mt-1.5 pl-2 flex flex-col justify-start border-l-[3px] min-h-0 overflow-hidden ${reportType === 'progres' ? 'border-emerald-500' : 'border-slate-800'}`;
                         }
                         
@@ -2092,10 +2092,10 @@
                         
                         <div className={`flex flex-col ${noteBoxClass}`}>
                             <div className="flex items-center justify-between mb-0.5">
-                                <div className={`text-[6.5pt] uppercase tracking-tighter ${isMinimalis ? 'text-black font-black' : (isFormal ? 'text-black font-bold' : 'text-slate-400 font-black')}`}>KETERANGAN {isFormal ? ':' : ''}</div>
+                                <div className={`text-[7pt] uppercase tracking-tighter ${isMinimalis ? 'text-black font-black' : (isFormal ? 'text-black font-bold' : 'text-slate-400 font-black')}`}>KETERANGAN {isFormal ? ':' : ''}</div>
                                 {reportType === 'progres' && p?.src && <div className={`text-[7pt] font-black px-1.5 py-0.5 rounded ${isMinimalis ? 'text-emerald-700' : (isFormal ? 'text-emerald-700 bg-emerald-50' : 'text-emerald-700 bg-emerald-50 border border-emerald-200')}`}>PROGRES: {p.progress || 0}%</div>}
                             </div>
-                            <p className={`text-[7.5pt] leading-tight italic line-clamp-4 whitespace-pre-line ${noteTextColor}`}>{formatNoteText(p?.note)}</p>
+                            <p className={`text-[7pt] leading-tight italic line-clamp-4 whitespace-pre-line ${noteTextColor}`}>{formatNoteText(p?.note)}</p>
                         </div>
                         </div>
                         );
