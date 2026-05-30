@@ -1802,29 +1802,28 @@
                                 setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000); 
                             } else {
                                 // Khusus Laptop/PC: Gunakan Print Dialog bawaan browser (Kualitas Teks HD)
-                                setStatusMsg({ text: 'Set Margin ke "Default/None"', type: 'info' });
+                                setStatusMsg({ text: 'Pilih "Save as PDF" & Margin "Default"', type: 'info' });
                                 
-                                await new Promise((resolve) => {
-                                    const afterPrint = () => {
-                                        window.removeEventListener('afterprint', afterPrint);
-                                        resolve();
-                                    };
-                                    window.addEventListener('afterprint', afterPrint);
+                                setTimeout(() => {
+                                    window.print();
                                     
-                                    setTimeout(() => {
-                                        window.print();
-                                        setTimeout(() => {
-                                            window.removeEventListener('afterprint', afterPrint);
-                                            resolve();
-                                        }, 4000);
-                                    }, 500);
-                                });
-
-                                setStatusMsg({ text: 'Selesai!', type: 'success' }); 
-                                setIsPdfLoading(false); 
-                                setBakedPages(null); 
-                                setShouldTriggerDownload(false); 
-                                setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000); 
+                                    // Tahan elemen DOM agar tidak dihapus sebelum dialog cetak ditutup
+                                    const cleanupPrint = () => {
+                                        window.removeEventListener('afterprint', cleanupPrint);
+                                        window.removeEventListener('focus', cleanupPrint);
+                                        
+                                        setStatusMsg({ text: 'Selesai!', type: 'success' }); 
+                                        setIsPdfLoading(false); 
+                                        setBakedPages(null); 
+                                        setShouldTriggerDownload(false); 
+                                        setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000); 
+                                    };
+                                    
+                                    window.addEventListener('afterprint', cleanupPrint);
+                                    // Pemicu cadangan: saat dialog print tertutup, window akan kembali "fokus"
+                                    window.addEventListener('focus', cleanupPrint);
+                                    
+                                }, 1000);
                             }
                         }
                     } 
