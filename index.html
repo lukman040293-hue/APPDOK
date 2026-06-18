@@ -1791,40 +1791,29 @@
                             setTimeout(() => setStatusMsg({ text: '', type: '' }), 3000); 
 
                         } else {
-                            if (isMobile) {
-                                // Khusus HP (Android/iOS): Langsung Download PDF (Bypass Print Dialog yang error)
-                                setStatusMsg({ text: 'Menyimpan PDF ke HP...', type: 'info' });
-                                await window.html2pdf().set(options).from(element).save();
-                                setStatusMsg({ text: 'Selesai Diunduh!', type: 'success' }); 
-                                setIsPdfLoading(false); 
-                                setBakedPages(null); 
-                                setShouldTriggerDownload(false); 
-                                setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000); 
-                            } else {
-                                // Khusus Laptop/PC: Gunakan Print Dialog bawaan browser (Kualitas Teks HD)
-                                setStatusMsg({ text: 'Pilih "Save as PDF" & Margin "Default"', type: 'info' });
+                            // Selalu gunakan Print Dialog bawaan browser agar kualitas foto & teks HD dan tidak terkompres
+                            setStatusMsg({ text: 'Membuka menu cetak...', type: 'info' });
+                            
+                            setTimeout(() => {
+                                window.print();
                                 
-                                setTimeout(() => {
-                                    window.print();
+                                // Tahan elemen DOM agar tidak dihapus sebelum dialog cetak ditutup
+                                const cleanupPrint = () => {
+                                    window.removeEventListener('afterprint', cleanupPrint);
+                                    window.removeEventListener('focus', cleanupPrint);
                                     
-                                    // Tahan elemen DOM agar tidak dihapus sebelum dialog cetak ditutup
-                                    const cleanupPrint = () => {
-                                        window.removeEventListener('afterprint', cleanupPrint);
-                                        window.removeEventListener('focus', cleanupPrint);
-                                        
-                                        setStatusMsg({ text: 'Selesai!', type: 'success' }); 
-                                        setIsPdfLoading(false); 
-                                        setBakedPages(null); 
-                                        setShouldTriggerDownload(false); 
-                                        setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000); 
-                                    };
-                                    
-                                    window.addEventListener('afterprint', cleanupPrint);
-                                    // Pemicu cadangan: saat dialog print tertutup, window akan kembali "fokus"
-                                    window.addEventListener('focus', cleanupPrint);
-                                    
-                                }, 1000);
-                            }
+                                    setStatusMsg({ text: 'Selesai!', type: 'success' }); 
+                                    setIsPdfLoading(false); 
+                                    setBakedPages(null); 
+                                    setShouldTriggerDownload(false); 
+                                    setTimeout(() => setStatusMsg({ text: '', type: '' }), 2000); 
+                                };
+                                
+                                window.addEventListener('afterprint', cleanupPrint);
+                                // Pemicu cadangan: saat dialog print tertutup, window akan kembali "fokus"
+                                window.addEventListener('focus', cleanupPrint);
+                                
+                            }, 1000);
                         }
                     } 
                     catch (e) {
